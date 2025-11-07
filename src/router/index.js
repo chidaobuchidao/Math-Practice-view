@@ -1,8 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Login from '@/views/Login.vue'
-import Register from '@/views/Register.vue'
-import StudentDashboard from '@/views/StudentDashboard.vue'
-import TeacherDashboard from '@/views/TeacherDashboard.vue'
+import { useUserStore } from '@/stores/user'
 
 const routes = [
   {
@@ -12,25 +9,27 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login,
+    component: () => import('@/views/Login.vue'),
+    meta: { requiresGuest: true }
   },
   {
     path: '/register',
     name: 'Register',
-    component: Register,
-  },
-  {
-    path: '/student',
-    name: 'StudentDashboard',
-    component: StudentDashboard,
-    meta: { requiresAuth: true, role: 'student' },
+    component: () => import('@/views/Register.vue'),
+    meta: { requiresGuest: true }
   },
   {
     path: '/teacher',
     name: 'TeacherDashboard',
-    component: TeacherDashboard,
-    meta: { requiresAuth: true, role: 'teacher' },
+    component: () => import('@/views/teacher/TeacherDashboard.vue'),
+    meta: { requiresAuth: true, role: 'teacher' }
   },
+  {
+    path: '/student',
+    name: 'StudentDashboard',
+    component: () => import('@/views/student/StudentDashboard.vue'),
+    meta: { requiresAuth: true, role: 'student' }
+  }
 ]
 
 const router = createRouter({
@@ -38,22 +37,39 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫 - 检查登录状态和角色
+// 路由守卫
 router.beforeEach((to, from, next) => {
-  const userInfo = JSON.parse(localStorage.getItem('currentUser') || '{}')
-
-  if (to.meta.requiresAuth) {
-    if (!userInfo.id) {
-      next('/login')
-    } else if (to.meta.role && userInfo.role !== to.meta.role) {
-      // 角色不匹配，跳转到对应角色的首页
-      next(userInfo.role === 'student' ? '/student' : '/teacher')
-    } else {
-      next()
-    }
-  } else {
-    next()
+  const userStore = useUserStore()
+  
+  // 初始化用户信息
+  if (!userStore.userInfo) {
+    userStore.initFromStorage()
   }
+  
+  const isLoggedIn = userStore.isLoggedIn
+  const userRole = userStore.userInfo?.role
+  
+  // 检查是否需要认证
+  if (to.meta.requiresAuth && !isLoggedIn) {
+    next('/login')
+    return
+  }
+  
+  // 检查是否要求未登录（如登录页面）
+  if (to.meta.requiresGuest && isLoggedIn) {
+    // 根据角色跳转到对应首页
+    next(userRole === 'teacher' ? '/teacher' : '/student')
+    return
+  }
+  
+  // 检查角色权限
+  if (to.meta.role && userRole !== to.meta.role) {
+    // 角色不匹配，跳转到对应首页
+    next(userRole === 'teacher' ? '/teacher' : '/student')
+    return
+  }
+  
+  next()
 })
 
 export default router

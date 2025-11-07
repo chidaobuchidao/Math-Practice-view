@@ -1,33 +1,45 @@
-import request from '@/utils/request'
+import { defineStore } from 'pinia'
+import { ref , computed } from 'vue'
 
-export const userApi = {
-  // 用户登录
-  login(data) {
-    return request.post('/User/login', data)
-  },
-
-  // 用户注册
-  register(data) {
-    return request.post('/User/register', data)
-  },
-
-  // 检查用户名
-  checkUsername(username) {
-    return request.get(`/User/checkUsername?username=${username}`)
-  },
-
-  // 获取学生列表
-  getStudents() {
-    return request.get('/User/students')
-  },
-
-  // 获取教师列表
-  getTeachers() {
-    return request.get('/User/teachers')
-  },
-
-  // 添加用户
-  addUser(data) {
-    return request.post('/User/add', data)
-  },
-}
+export const useUserStore = defineStore('user', () => {
+  // 状态
+  const userInfo = ref(null)
+  const token = ref('')
+  
+  // getters
+  const isLoggedIn = computed(() => !!userInfo.value)
+  const isTeacher = computed(() => userInfo.value?.role === 'teacher')
+  const isStudent = computed(() => userInfo.value?.role === 'student')
+  
+  // actions
+  const setUserInfo = (info) => {
+    userInfo.value = info
+    // 同时保存到localStorage
+    localStorage.setItem('currentUser', JSON.stringify(info))
+  }
+  
+  const clearUserInfo = () => {
+    userInfo.value = null
+    token.value = ''
+    localStorage.removeItem('currentUser')
+  }
+  
+  // 初始化时从localStorage读取
+  const initFromStorage = () => {
+    const stored = localStorage.getItem('currentUser')
+    if (stored) {
+      userInfo.value = JSON.parse(stored)
+    }
+  }
+  
+  return {
+    userInfo,
+    token,
+    isLoggedIn,
+    isTeacher,
+    isStudent,
+    setUserInfo,
+    clearUserInfo,
+    initFromStorage
+  }
+})

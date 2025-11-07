@@ -1,44 +1,33 @@
 import request from '@/utils/request'
 
 export const userApi = {
-  // 用户登录 - 改进错误处理
-  async login(data) {
-    try {
-      const response = await request.post('/User/login', data)
-      return response
-    } catch (error) {
-      console.error('登录API错误:', error)
-      // 重新抛出错误，让调用者处理
-      throw error
-    }
+  // 用户登录
+  login(data) {
+    return request.post('/User/login', data)
   },
   
   // 用户注册
-  async register(data) {
-    try {
-      const response = await request.post('/User/register', data)
-      return response
-    } catch (error) {
-      console.error('注册API错误:', error)
-      throw error
-    }
+  register(data) {
+    return request.post('/User/register', data)
   },
   
   // 检查用户名
-  async checkUsername(username) {
-    const response = await request.get(`/User/checkUsername?username=${username}`)
-    return response
+  checkUsername(username) {
+    return request.get(`/User/checkUsername?username=${username}`)
   },
   
   // 获取学生列表
-  async getStudents() {
-    const response = await request.get('/User/students')
-    return response
+  getStudents() {
+    return request.get('/User/students')
   },
   
   // 获取教师列表
-  async getTeachers() {
-    const response = await request.get('/User/teachers')
-    return response
+  getTeachers() {
+    return request.get('/User/teachers')
+  },
+  
+  // 添加用户
+  addUser(data) {
+    return request.post('/User/add', data)
   }
 }
