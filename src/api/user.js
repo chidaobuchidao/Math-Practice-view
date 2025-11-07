@@ -1,13 +1,19 @@
 import request from '@/utils/request'
 
 export const userApi = {
-  // 用户登录
+  // 用户登录 - 改进错误处理
   async login(data) {
-    const response = await request.post('/User/login', data)
-    return response
+    try {
+      const response = await request.post('/User/login', data)
+      return response
+    } catch (error) {
+      console.error('登录API错误:', error)
+      // 重新抛出错误，让调用者处理
+      throw error
+    }
   },
   
-  // 用户注册 - 添加更详细的错误处理
+  // 用户注册
   async register(data) {
     try {
       const response = await request.post('/User/register', data)
