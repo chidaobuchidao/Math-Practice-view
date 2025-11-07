@@ -10,7 +10,7 @@
 
             <el-form :model="registerForm" :rules="registerRules" ref="registerFormRef" label-width="80px">
                 <el-form-item label="用户名" prop="username">
-                    <el-input v-model="registerForm.username" placeholder="请输入用户名" @blur="checkUsername">
+                    <el-input v-model="registerForm.username" placeholder="请输入用户名">
                         <template #append>
                             <el-button @click="checkUsername" :loading="checkingUsername">
                                 检查
@@ -86,11 +86,9 @@ const validateConfirmPassword = (rule, value, callback) => {
 const registerRules = {
     username: [
         { required: true, message: '请输入用户名', trigger: 'blur' },
-        { min: 3, message: '用户名长度不能少于3位', trigger: 'blur' }
     ],
     password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
     ],
     confirmPassword: [
         { required: true, message: '请确认密码', trigger: 'blur' },
@@ -101,54 +99,76 @@ const registerRules = {
     ]
 }
 
-// 检查用户名是否可用
+// 检查用户名是否可用 - 修复逻辑
 const checkUsername = async () => {
     if (!registerForm.username) {
         ElMessage.warning('请输入用户名')
-        return
+        return false
     }
 
     try {
         checkingUsername.value = true
         const response = await userApi.checkUsername(registerForm.username)
         usernameAvailable.value = !response.data
-
+        
         if (usernameAvailable.value) {
             ElMessage.success('用户名可用')
         } else {
             ElMessage.error('用户名已存在')
         }
+        return usernameAvailable.value
     } catch (error) {
         console.error('检查用户名失败:', error)
+        ElMessage.error('检查用户名失败，请重试')
+        return false
     } finally {
         checkingUsername.value = false
     }
 }
 
+// 修复注册处理逻辑
+// 修复注册处理逻辑
 const handleRegister = async () => {
     if (!registerFormRef.value) return
 
     try {
+        // 验证表单
         await registerFormRef.value.validate()
 
-        if (!usernameAvailable.value && registerForm.username) {
-            ElMessage.warning('请先检查用户名是否可用')
-            return
+        // 检查用户名可用性
+        if (!usernameAvailable.value) {
+            // 如果还没有检查过用户名，先检查
+            if (registerForm.username) {
+                await checkUsername()
+                if (!usernameAvailable.value) {
+                    ElMessage.warning('用户名已存在，请更换用户名')
+                    return
+                }
+            } else {
+                ElMessage.warning('请先输入并检查用户名')
+                return
+            }
         }
 
         loading.value = true
 
-        // 准备注册数据
+        // 准备注册数据 - 确保字段名与后端一致
         const registerData = {
             username: registerForm.username,
             password: registerForm.password,
             role: registerForm.role,
-            userClass: registerForm.userClass
+            userClass: registerForm.userClass || '' // 确保即使为空也发送
         }
 
-        const response = await userApi.register(registerData)
+        console.log('发送注册数据:', registerData)
 
-        ElMessage.success('注册成功！')
+        // 发送注册请求
+        const response = await userApi.register(registerData)
+        
+        console.log('注册响应:', response)
+
+        // 注册成功
+        ElMessage.success(response.message || '注册成功！')
 
         // 注册成功后跳转到登录页面
         setTimeout(() => {
@@ -157,7 +177,13 @@ const handleRegister = async () => {
 
     } catch (error) {
         console.error('注册失败:', error)
-        ElMessage.error(error.message || '注册失败，请重试')
+        // 显示具体的错误信息
+        if (error.message && error.message.includes('用户名已存在')) {
+            ElMessage.error('用户名已存在，请更换用户名')
+            usernameAvailable.value = false
+        } else {
+            ElMessage.error(error.message || '注册失败，请重试')
+        }
     } finally {
         loading.value = false
     }

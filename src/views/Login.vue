@@ -10,12 +10,14 @@
 
             <el-form :model="loginForm" :rules="loginRules" ref="loginFormRef" @submit.prevent="handleLogin">
                 <el-form-item prop="username">
-                    <el-input v-model="loginForm.username" placeholder="请输入用户名" size="large" prefix-icon="User" />
+                    <el-input v-model="loginForm.username" placeholder="请输入用户名" size="large" prefix-icon="User" 
+                    @keyup.enter.native="handleLogin" />
                 </el-form-item>
 
                 <el-form-item prop="password">
                     <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" size="large"
-                        prefix-icon="Lock" show-password />
+                        prefix-icon="Lock" show-password
+                        @keyup.enter.native="handleLogin" />
                 </el-form-item>
 
                 <el-form-item>
@@ -55,7 +57,6 @@ const loginRules = {
     ],
     password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
     ]
 }
 
@@ -69,21 +70,39 @@ const handleLogin = async () => {
         const response = await login(loginForm)
         const userData = response.data
 
-        // 保存用户信息到本地存储
-        localStorage.setItem('currentUser', JSON.stringify(userData))
+        console.log('登录响应数据:', userData) // 调试信息
 
-        ElMessage.success(`欢迎回来，${userData.username}！`)
+        // 检查userData是否存在且包含必要的字段
+        if (userData && userData.id && userData.username) {
+            // 保存用户信息到本地存储
+            localStorage.setItem('currentUser', JSON.stringify(userData))
 
-        // 根据角色跳转到不同页面
-        if (userData.role === 'student') {
-            router.push('/student')
-        } else if (userData.role === 'teacher') {
-            router.push('/teacher')
+            ElMessage.success(`欢迎回来，${userData.username}！`)
+
+            // 根据角色跳转到不同页面
+            if (userData.role === 'student') {
+                router.push('/student')
+            } else if (userData.role === 'teacher') {
+                router.push('/teacher')
+            } else {
+                ElMessage.warning('未知用户角色')
+            }
+        } else {
+            // userData为null或缺少必要字段，表示登录失败
+            throw new Error('用户名或密码错误')
         }
 
     } catch (error) {
-        console.error('登录失败:', error)
-        ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+        console.error('登录失败详情:', error)
+        
+        // 错误提示
+        if (error.message && error.message.includes('用户名或密码错误')) {
+            ElMessage.error('用户名或密码错误，请重新输入')
+        } else if (error.response && error.response.status === 401) {
+            ElMessage.error('认证失败，请检查用户名和密码')
+        } else {
+            ElMessage.error(error.message || '登录失败，请稍后重试')
+        }
     } finally {
         loading.value = false
     }
@@ -93,6 +112,10 @@ const goToRegister = () => {
     router.push('/register')
 }
 </script>
+
+<style scoped>
+/* 样式保持不变 */
+</style>
 
 <style scoped>
 .login-container {
