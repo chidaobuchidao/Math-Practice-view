@@ -1,33 +1,40 @@
-import request from '@/utils/request'
+import request from '../utils/request' // 使用相对路径，避免别名解析问题
 
+export function login(data) {
+  return request.post('/User/login', data)
+}
+
+export function register(data) {
+  return request.post('/User/register', data)
+}
+
+export function checkUsername(username) {
+  return request.get(`/User/checkUsername?username=${username}`)
+}
+
+export function getStudents() {
+  return request.get('/User/students')
+}
+
+export function getTeachers() {
+  return request.get('/User/teachers')
+}
+
+export function addUser(data) {
+  return request.post('/User/add', data)
+}
+
+export function deleteUser(userId) {
+  return request.delete(`/User/delete/${userId}`)
+}
+
+// 兼容旧代码：默认/命名聚合导出
 export const userApi = {
-  // 用户登录
-  login(data) {
-    return request.post('/User/login', data)
-  },
-  
-  // 用户注册
-  register(data) {
-    return request.post('/User/register', data)
-  },
-  
-  // 检查用户名
-  checkUsername(username) {
-    return request.get(`/User/checkUsername?username=${username}`)
-  },
-  
-  // 获取学生列表
-  getStudents() {
-    return request.get('/User/students')
-  },
-  
-  // 获取教师列表
-  getTeachers() {
-    return request.get('/User/teachers')
-  },
-  
-  // 添加用户
-  addUser(data) {
-    return request.post('/User/add', data)
-  }
+  login,
+  register,
+  checkUsername,
+  getStudents,
+  getTeachers,
+  addUser,
+  deleteUser,
 }

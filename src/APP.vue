@@ -5,6 +5,28 @@
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+let visibilityHandler = null
+
+onMounted(() => {
+    // 页面获得焦点时重新检查用户状态
+    visibilityHandler = () => {
+        if (!document.hidden) {
+            userStore.initFromStorage()
+        }
+    }
+
+    document.addEventListener('visibilitychange', visibilityHandler)
+})
+
+onUnmounted(() => {
+    if (visibilityHandler) {
+        document.removeEventListener('visibilitychange', visibilityHandler)
+    }
+})
 </script>
 
 <style>

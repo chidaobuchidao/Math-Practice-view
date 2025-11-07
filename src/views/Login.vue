@@ -10,14 +10,13 @@
 
             <el-form :model="loginForm" :rules="loginRules" ref="loginFormRef" @submit.prevent="handleLogin">
                 <el-form-item prop="username">
-                    <el-input v-model="loginForm.username" placeholder="请输入用户名" size="large" prefix-icon="User" 
-                    @keyup.enter.native="handleLogin" />
+                    <el-input v-model="loginForm.username" placeholder="请输入用户名" size="large" prefix-icon="User"
+                        @keyup.enter.native="handleLogin" />
                 </el-form-item>
 
                 <el-form-item prop="password">
                     <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" size="large"
-                        prefix-icon="Lock" show-password
-                        @keyup.enter.native="handleLogin" />
+                        prefix-icon="Lock" show-password @keyup.enter.native="handleLogin" />
                 </el-form-item>
 
                 <el-form-item>
@@ -94,7 +93,7 @@ const handleLogin = async () => {
 
     } catch (error) {
         console.error('登录失败详情:', error)
-        
+
         // 错误提示
         if (error.message && error.message.includes('用户名或密码错误')) {
             ElMessage.error('用户名或密码错误，请重新输入')

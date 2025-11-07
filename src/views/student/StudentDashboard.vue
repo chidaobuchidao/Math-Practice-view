@@ -6,7 +6,7 @@
                     <h2>学生学习中心</h2>
                     <div class="user-info">
                         <span>欢迎，{{ userInfo.username }}</span>
-                        <el-button type="text" @click="handleLogout">退出登录</el-button>
+                        <el-button type="primary" :icon="CircleClose" @click="handleLogout">退出登录</el-button>
                     </div>
                 </div>
             </el-header>
@@ -73,6 +73,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 
+import { CircleClose, User, Document, Collection } from '@/utils/icons'
+
 const router = useRouter()
 const userInfo = ref({})
 
@@ -95,7 +97,8 @@ const handleLogout = async () => {
 
         localStorage.removeItem('currentUser')
         ElMessage.success('已退出登录')
-        router.push('/login')
+        // 添加时间戳参数避免缓存
+        router.push('/login?_=' + Date.now())
     } catch {
         // 用户取消退出
     }

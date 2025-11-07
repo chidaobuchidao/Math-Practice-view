@@ -11,65 +11,65 @@
         <el-descriptions-item label="教师ID">
           {{ userStore.userInfo?.id }}
         </el-descriptions-item>
-        
+
         <el-descriptions-item label="用户名">
           {{ userStore.userInfo?.username }}
         </el-descriptions-item>
-        
+
         <el-descriptions-item label="角色">
           <el-tag type="success">教师</el-tag>
         </el-descriptions-item>
-        
+
         <el-descriptions-item label="注册时间">
           {{ formatDate(userStore.userInfo?.createdAt) }}
         </el-descriptions-item>
-    
+
       </el-descriptions>
     </el-card>
 
-<el-row :gutter="20" style="margin-top: 20px;">
-  <el-col :span="8">
-    <el-card class="dashboard-card" shadow="hover" @click="goToQuestions">
-      <div class="dashboard-content">
-        <div class="dashboard-icon" style="background-color: #ecf5ff;">
-          <i class="el-icon-collection"></i>
-        </div>
-        <div class="dashboard-info">
-          <div class="dashboard-number">{{ questionStats.total }}</div>
-          <div class="dashboard-label">总题目数</div>
-        </div>
-      </div>
-    </el-card>
-  </el-col>
-  
-  <el-col :span="8">
-    <el-card class="dashboard-card" shadow="hover" @click="goToPapers">
-      <div class="dashboard-content">
-        <div class="dashboard-icon" style="background-color: #fdf6ec;">
-          <i class="el-icon-document"></i>
-        </div>
-        <div class="dashboard-info">
-          <div class="dashboard-number">{{ paperStats.total }}</div>
-          <div class="dashboard-label">生成试卷数</div>
-        </div>
-      </div>
-    </el-card>
-  </el-col>
-  
-  <el-col :span="8">
-    <el-card class="dashboard-card" shadow="hover" @click="goToStudents">
-      <div class="dashboard-content">
-        <div class="dashboard-icon" style="background-color: #f0f9ff;">
-          <i class="el-icon-user"></i>
-        </div>
-        <div class="dashboard-info">
-          <div class="dashboard-number">{{ studentStats.total }}</div>
-          <div class="dashboard-label">管理学生数</div>
-        </div>
-      </div>
-    </el-card>
-  </el-col>
-</el-row>
+    <el-row :gutter="20" style="margin-top: 20px;">
+      <el-col :span="8">
+        <el-card class="dashboard-card" shadow="hover" @click="goToQuestions">
+          <div class="dashboard-content">
+            <div class="dashboard-icon" style="background-color: #ecf5ff;">
+              <i class="el-icon-collection"></i>
+            </div>
+            <div class="dashboard-info">
+              <div class="dashboard-number">{{ questionStats.total }}</div>
+              <div class="dashboard-label">总题目数</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :span="8">
+        <el-card class="dashboard-card" shadow="hover" @click="goToPapers">
+          <div class="dashboard-content">
+            <div class="dashboard-icon" style="background-color: #fdf6ec;">
+              <i class="el-icon-document"></i>
+            </div>
+            <div class="dashboard-info">
+              <div class="dashboard-number">{{ paperStats.total }}</div>
+              <div class="dashboard-label">生成试卷数</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :span="8">
+        <el-card class="dashboard-card" shadow="hover" @click="goToStudents">
+          <div class="dashboard-content">
+            <div class="dashboard-icon" style="background-color: #f0f9ff;">
+              <i class="el-icon-user"></i>
+            </div>
+            <div class="dashboard-info">
+              <div class="dashboard-number">{{ studentStats.total }}</div>
+              <div class="dashboard-label">管理学生数</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <!-- 最近活动 -->
     <el-card style="margin-top: 20px;">
@@ -79,12 +79,8 @@
         </div>
       </template>
       <el-timeline>
-        <el-timeline-item
-          v-for="(activity, index) in recentActivities"
-          :key="index"
-          :timestamp="activity.time"
-          :type="activity.type"
-        >
+        <el-timeline-item v-for="(activity, index) in recentActivities" :key="index" :timestamp="activity.time"
+          :type="activity.type">
           {{ activity.content }}
         </el-timeline-item>
       </el-timeline>
@@ -98,10 +94,10 @@ import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { questionApi } from '@/api/question'
 import { paperApi } from '@/api/paper'
-import { useRouter } from 'vue-router'
 
 const userStore = useUserStore()
-const router = useRouter()
+// 定义 emits
+const emit = defineEmits(['navigate'])
 
 // 统计数据
 const questionStats = reactive({
@@ -116,19 +112,19 @@ const studentStats = reactive({
   total: 0
 })
 
-// 跳转到题目管理
+// 跳转到题目管理 - 改为发射事件
 const goToQuestions = () => {
-  router.push('/teacher?tab=questions')
+  emit('navigate', 'questions')
 }
 
-// 跳转到试卷管理
+// 跳转到试卷管理 - 改为发射事件
 const goToPapers = () => {
-  router.push('/teacher?tab=papers')
+  emit('navigate', 'papers')
 }
 
-// 跳转到学生管理
+// 跳转到学生管理 - 改为发射事件
 const goToStudents = () => {
-  router.push('/teacher?tab=students')
+  emit('navigate', 'students')
 }
 
 // 最近活动
@@ -143,7 +139,7 @@ const recentActivities = ref([
 // 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return '未知'
-  
+
   try {
     const date = new Date(dateString)
     return date.toLocaleString('zh-CN', {
@@ -162,19 +158,18 @@ const formatDate = (dateString) => {
 // 加载统计数据
 const loadStats = async () => {
   try {
-    // 加载题目统计（这里可以调用后端API获取准确数据）
-    // 暂时使用模拟数据
+    // 加载题目统计
     const questionsResponse = await questionApi.getAllQuestions()
     questionStats.total = questionsResponse.data?.length || 0
-    
+
     // 加载学生统计
     const studentsResponse = await userApi.getStudents()
     studentStats.total = studentsResponse.data?.length || 0
-    
-    // 加载试卷统计（需要根据教师ID获取）
-    // 暂时使用模拟数据
-    paperStats.total = 0 // 这里可以调用相关API获取教师生成的试卷数量
-    
+
+    // 加载试卷统计
+    const papersResponse = await paperApi.getAllPapers()
+    paperStats.total = papersResponse.data?.length || 0
+
   } catch (error) {
     console.error('加载统计数据失败:', error)
   }
@@ -182,7 +177,7 @@ const loadStats = async () => {
 
 onMounted(() => {
   loadStats()
-  
+
   // 添加登录活动记录
   const now = new Date()
   recentActivities.value.unshift({

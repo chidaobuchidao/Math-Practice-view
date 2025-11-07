@@ -6,28 +6,28 @@
           <h2>教师管理后台</h2>
           <div class="user-info">
             <span>欢迎，{{ userStore.userInfo?.username }}老师</span>
-            <el-button type="text" @click="handleLogout">退出登录</el-button>
+            <el-button type="warning" :icon="CircleClose" @click="handleLogout">退出登录</el-button>
           </div>
         </div>
       </el-header>
-      
+
       <el-main>
         <el-tabs v-model="activeTab">
           <!-- 教师信息 -->
           <el-tab-pane label="教师信息" name="info">
-            <TeacherInfo />
+            <TeacherInfo @navigate="handleNavigation" />
           </el-tab-pane>
-          
+
           <!-- 题目管理 -->
           <el-tab-pane label="题目管理" name="questions">
             <QuestionManagement />
           </el-tab-pane>
-          
+
           <!-- 试卷生成 -->
           <el-tab-pane label="试卷生成" name="papers">
             <PaperGeneration />
           </el-tab-pane>
-          
+
           <!-- 学生管理 -->
           <el-tab-pane label="学生管理" name="students">
             <StudentManagement />
@@ -48,12 +48,19 @@ import QuestionManagement from './components/QuestionManagement.vue'
 import PaperGeneration from './components/PaperGeneration.vue'
 import StudentManagement from './components/StudentManagement.vue'
 
+import { CircleClose, User, Document, Collection } from '@/utils/icons'
+
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
 // 设置默认激活的标签页，优先使用路由参数
 const activeTab = ref('info')
+
+// 处理子组件导航事件
+const handleNavigation = (tabName) => {
+  activeTab.value = tabName
+}
 
 // 监听路由参数变化
 watch(
@@ -83,7 +90,7 @@ const handleLogout = async () => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     userStore.clearUserInfo()
     ElMessage.success('已退出登录')
     router.push('/login')
