@@ -38,7 +38,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { userApi } from '@/api/user'
+import { login } from '../api/user.js'  // 或相对路径调整
 
 const router = useRouter()
 const loading = ref(false)
@@ -66,7 +66,7 @@ const handleLogin = async () => {
         await loginFormRef.value.validate()
         loading.value = true
 
-        const response = await userApi.login(loginForm)
+        const response = await login(loginForm)
         const userData = response.data
 
         // 保存用户信息到本地存储

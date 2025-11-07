@@ -1,8 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Login from '@/views/Login.vue'
-import Register from '@/views/Register.vue'
-import StudentDashboard from '@/views/StudentDashboard.vue'
-import TeacherDashboard from '@/views/TeacherDashboard.vue'
+import Login from '../views/Login.vue'
+import Register from '../views/Register.vue'
+import StudentDashboard from '../views/StudentDashboard.vue'
+import TeacherDashboard from '../views/TeacherDashboard.vue'
 
 const routes = [
   {
