@@ -246,7 +246,8 @@ const loadQuestions = async () => {
     if (filterDifficulty.value) params.difficulty = filterDifficulty.value
 
     const response = await questionApi.getQuestionBank(params)
-    questions.value = response.data || []
+    // 按 id 升序排列
+    questions.value = (response.data || []).sort((a, b) => a.id - b.id)
 
     // 只在有筛选条件时显示消息
     if (filterType.value || filterDifficulty.value) {
@@ -317,6 +318,9 @@ const resetForm = () => {
 // 删除题目
 const handleDelete = async (questionId) => {
   try {
+    const question = questions.value.find(q => q.id === questionId)
+    if (!question) return
+
     await ElMessageBox.confirm('确定要删除这个题目吗？', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',

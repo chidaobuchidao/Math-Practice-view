@@ -76,12 +76,24 @@
       <template #header>
         <div class="card-header">
           <span>最近活动</span>
+          <el-button type="text" @click="clearActivities" size="small">清空记录</el-button>
         </div>
       </template>
-      <el-timeline>
-        <el-timeline-item v-for="(activity, index) in recentActivities" :key="index" :timestamp="activity.time"
-          :type="activity.type">
-          {{ activity.content }}
+
+      <div v-if="recentActivities.length === 0" class="empty-activities">
+        <el-empty description="暂无活动记录" />
+      </div>
+
+      <el-timeline v-else>
+        <el-timeline-item v-for="(activity, index) in recentActivities" :key="activity.id"
+          :timestamp="formatActivityTime(activity.timestamp)" :type="getActivityType(activity.type)"
+          :hollow="index === 0">
+          <div class="activity-content">
+            <span class="activity-text">{{ activity.content }}</span>
+            <el-tag v-if="activity.module" size="small" :type="getModuleTagType(activity.module)">
+              {{ getModuleText(activity.module) }}
+            </el-tag>
+          </div>
         </el-timeline-item>
       </el-timeline>
     </el-card>
@@ -89,7 +101,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { questionApi } from '@/api/question'
@@ -112,6 +125,29 @@ const studentStats = reactive({
   total: 0
 })
 
+// 最近活动
+const recentActivities = ref([])
+
+// 活动类型常量
+const ACTIVITY_TYPES = {
+  LOGIN: 'login',
+  CREATE_QUESTION: 'create_question',
+  UPDATE_QUESTION: 'update_question',
+  DELETE_QUESTION: 'delete_question',
+  GENERATE_PAPER: 'generate_paper',
+  DELETE_PAPER: 'delete_paper',
+  ADD_STUDENT: 'add_student',
+  DELETE_STUDENT: 'delete_student'
+}
+
+// 模块类型常量
+const MODULE_TYPES = {
+  QUESTION: 'question',
+  PAPER: 'paper',
+  STUDENT: 'student',
+  SYSTEM: 'system'
+}
+
 // 跳转到题目管理 - 改为发射事件
 const goToQuestions = () => {
   emit('navigate', 'questions')
@@ -126,15 +162,6 @@ const goToPapers = () => {
 const goToStudents = () => {
   emit('navigate', 'students')
 }
-
-// 最近活动
-const recentActivities = ref([
-  {
-    content: '登录系统',
-    time: '刚刚',
-    type: 'primary'
-  }
-])
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -152,6 +179,126 @@ const formatDate = (dateString) => {
     })
   } catch (error) {
     return dateString
+  }
+}
+
+// 格式化活动时间
+const formatActivityTime = (timestamp) => {
+  const now = new Date()
+  const activityTime = new Date(timestamp)
+  const diffInMinutes = Math.floor((now - activityTime) / (1000 * 60))
+
+  if (diffInMinutes < 1) {
+    return '刚刚'
+  } else if (diffInMinutes < 60) {
+    return `${diffInMinutes} 分钟前`
+  } else if (diffInMinutes < 24 * 60) {
+    const hours = Math.floor(diffInMinutes / 60)
+    return `${hours} 小时前`
+  } else {
+    return formatDate(timestamp)
+  }
+}
+
+// 获取活动类型对应的Element Plus类型
+const getActivityType = (activityType) => {
+  const typeMap = {
+    [ACTIVITY_TYPES.LOGIN]: 'success',
+    [ACTIVITY_TYPES.CREATE_QUESTION]: 'primary',
+    [ACTIVITY_TYPES.UPDATE_QUESTION]: 'warning',
+    [ACTIVITY_TYPES.DELETE_QUESTION]: 'danger',
+    [ACTIVITY_TYPES.GENERATE_PAPER]: 'primary',
+    [ACTIVITY_TYPES.DELETE_PAPER]: 'danger',
+    [ACTIVITY_TYPES.ADD_STUDENT]: 'success',
+    [ACTIVITY_TYPES.DELETE_STUDENT]: 'danger'
+  }
+  return typeMap[activityType] || 'info'
+}
+
+// 获取模块文本
+const getModuleText = (module) => {
+  const moduleMap = {
+    [MODULE_TYPES.QUESTION]: '题目管理',
+    [MODULE_TYPES.PAPER]: '试卷管理',
+    [MODULE_TYPES.STUDENT]: '学生管理',
+    [MODULE_TYPES.SYSTEM]: '系统'
+  }
+  return moduleMap[module] || module
+}
+
+// 获取模块标签类型
+const getModuleTagType = (module) => {
+  const typeMap = {
+    [MODULE_TYPES.QUESTION]: 'primary',
+    [MODULE_TYPES.PAPER]: 'success',
+    [MODULE_TYPES.STUDENT]: 'warning',
+    [MODULE_TYPES.SYSTEM]: 'info'
+  }
+  return typeMap[module] || 'info'
+}
+
+// 记录活动
+const recordActivity = (activity) => {
+  const newActivity = {
+    id: Date.now(), // 使用时间戳作为ID
+    type: activity.type,
+    content: activity.content,
+    module: activity.module || MODULE_TYPES.SYSTEM,
+    timestamp: new Date().toISOString()
+  }
+
+  // 添加到活动列表开头
+  recentActivities.value.unshift(newActivity)
+
+  // 只保留最近5条记录
+  if (recentActivities.value.length > 5) {
+    recentActivities.value = recentActivities.value.slice(0, 5)
+  }
+
+  // 保存到本地存储
+  saveActivitiesToStorage()
+}
+
+// 从本地存储加载活动记录
+const loadActivitiesFromStorage = () => {
+  try {
+    const stored = localStorage.getItem(`teacher_activities_${userStore.userInfo?.id}`)
+    if (stored) {
+      const activities = JSON.parse(stored)
+      // 确保只显示最近5条
+      recentActivities.value = activities.slice(0, 5)
+    }
+  } catch (error) {
+    console.error('加载活动记录失败:', error)
+    recentActivities.value = []
+  }
+}
+
+// 保存活动记录到本地存储
+const saveActivitiesToStorage = () => {
+  try {
+    localStorage.setItem(`teacher_activities_${userStore.userInfo?.id}`, JSON.stringify(recentActivities.value))
+  } catch (error) {
+    console.error('保存活动记录失败:', error)
+  }
+}
+
+// 清空活动记录
+const clearActivities = async () => {
+  try {
+    await ElMessageBox.confirm('确定要清空所有活动记录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    recentActivities.value = []
+    localStorage.removeItem(`teacher_activities_${userStore.userInfo?.id}`)
+    ElMessage.success('活动记录已清空')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('清空活动记录失败')
+    }
   }
 }
 
@@ -177,14 +324,21 @@ const loadStats = async () => {
 
 onMounted(() => {
   loadStats()
+  loadActivitiesFromStorage()
 
-  // 添加登录活动记录
-  const now = new Date()
-  recentActivities.value.unshift({
+  // 记录登录活动
+  recordActivity({
+    type: ACTIVITY_TYPES.LOGIN,
     content: `教师 ${userStore.userInfo?.username} 登录系统`,
-    time: now.toLocaleTimeString('zh-CN'),
-    type: 'success'
+    module: MODULE_TYPES.SYSTEM
   })
+})
+
+// 暴露方法给父组件使用
+defineExpose({
+  recordActivity,
+  ACTIVITY_TYPES,
+  MODULE_TYPES
 })
 </script>
 
@@ -280,5 +434,20 @@ onMounted(() => {
 .dashboard-label {
   color: #909399;
   font-size: 14px;
+}
+
+.activity-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-text {
+  flex: 1;
+  margin-right: 10px;
+}
+
+.empty-activities {
+  padding: 20px 0;
 }
 </style>

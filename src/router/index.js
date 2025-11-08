@@ -41,7 +41,7 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
 
-  // 初始化用户信息
+  // 初始化用户信息 - 现在从 sessionStorage 读取
   if (!userStore.userInfo) {
     userStore.initFromStorage()
   }

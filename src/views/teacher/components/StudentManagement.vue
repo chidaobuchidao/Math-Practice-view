@@ -13,6 +13,7 @@
           <el-icon>
             <Plus />
           </el-icon>
+
           添加学生
         </el-button>
       </div>
@@ -79,17 +80,18 @@
           </div>
         </div>
       </template>
-
+      <!-- 学生列表表格 -->
       <el-table :data="students" v-loading="loading" style="width: 100%">
-        <el-table-column prop="id" label="学生ID" width="100" align="center" />
-        <el-table-column prop="username" label="用户名" width="150" />
-        <el-table-column prop="userClass" label="班级" width="150">
+        <el-table-column prop="id" label="学生ID" width="100" align="center" fixed="left" />
+        <el-table-column prop="username" label="用户名" width="150" fixed="left" />
+        <el-table-column prop="userClass" label="班级" width="150" fixed="left">
           <template #default="{ row }">
             <el-tag v-if="row.userClass" type="success">{{ row.userClass }}</el-tag>
             <el-tag v-else type="info">未设置</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="注册时间" width="180">
+        <!-- 调整注册时间的固定宽度，让它自适应 -->
+        <el-table-column prop="createdAt" label="注册时间" min-width="180">
           <template #default="{ row }">
             {{ formatDate(row.createdAt) }}
           </template>
@@ -99,7 +101,7 @@
             <el-tag type="success">正常</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewStudentPapers(row)">
               查看试卷
@@ -189,7 +191,7 @@
             <el-descriptions-item label="得分">{{ currentPaperDetail.paper.score }}</el-descriptions-item>
             <el-descriptions-item label="用时">{{ currentPaperDetail.paper.timeSpent }}秒</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(currentPaperDetail.paper.createdAt)
-              }}</el-descriptions-item>
+            }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
         <!-- 题目列表 -->

@@ -33,7 +33,7 @@
         <el-table-column prop="totalQuestions" label="题目数量" width="100" align="center" />
         <el-table-column prop="score" label="得分" width="100" align="center">
           <template #default="{ row }">
-            <span v-if="row.score !== null && row.score !== undefined">
+            <span v-if="row.score !== null && row.score !== undefined && row.score >= 0">
               {{ row.score }} 分
             </span>
             <el-tag v-else type="info" size="small">未批改</el-tag>
@@ -351,7 +351,22 @@ const loadPapers = async () => {
     loading.value = true
     const response = await paperApi.getAllPapers()
     papers.value = response.data || []
-    ElMessage.success(`成功加载 ${papers.value.length} 份试卷`)
+
+    // 添加调试信息，检查试卷状态
+    console.log('试卷数据详情:')
+    papers.value.forEach(paper => {
+      console.log(`试卷 ${paper.id}:`, {
+        score: paper.score,
+        scoreType: typeof paper.score,
+        isNull: paper.score === null,
+        isUndefined: paper.score === undefined,
+        isZero: paper.score === 0,
+        totalQuestions: paper.totalQuestions,
+        correctCount: paper.correctCount
+      })
+    })
+    // 提示试卷加载成功
+    // ElMessage.success(`成功加载 ${papers.value.length} 份试卷`)
   } catch (error) {
     ElMessage.error('加载试卷列表失败: ' + error.message)
     papers.value = []
@@ -483,6 +498,7 @@ const handleGeneratePaper = async () => {
     generating.value = false
   }
 }
+
 
 // 删除试卷
 const handleDeletePaper = async (paperId) => {

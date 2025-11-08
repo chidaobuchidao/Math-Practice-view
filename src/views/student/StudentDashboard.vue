@@ -144,7 +144,7 @@
                     <el-descriptions :column="2" border>
                         <el-descriptions-item label="用户名">{{ userInfo.username }}</el-descriptions-item>
                         <el-descriptions-item label="角色">{{ userInfo.role === 'student' ? '学生' : userInfo.role
-                            }}</el-descriptions-item>
+                        }}</el-descriptions-item>
                         <el-descriptions-item label="班级">{{ userInfo.userClass || '未设置' }}</el-descriptions-item>
                         <el-descriptions-item label="注册时间">{{ formatDate(userInfo.createdAt) }}</el-descriptions-item>
                     </el-descriptions>
@@ -222,8 +222,10 @@ import {
     Refresh
 } from '@element-plus/icons-vue'
 import { paperApi } from '@/api/paper'
+import { useUserStore } from '@/stores/user' // 引入 userStore
 
 const router = useRouter()
+const userStore = useUserStore() // 使用 userStore
 const userInfo = ref({})
 const papers = ref([])
 const loading = ref(false)
@@ -456,7 +458,7 @@ const handleLogout = async () => {
             type: 'warning'
         })
 
-        localStorage.removeItem('currentUser')
+        userStore.clearUserInfo() // 使用 userStore 的方法
         ElMessage.success('已退出登录')
         router.push('/login?_=' + Date.now())
     } catch {
@@ -465,12 +467,12 @@ const handleLogout = async () => {
 }
 
 onMounted(() => {
-    const user = JSON.parse(localStorage.getItem('currentUser') || '{}')
-    if (!user.id) {
+    // 使用 userStore 来获取用户信息
+    if (!userStore.isLoggedIn) {
         router.push('/login')
         return
     }
-    userInfo.value = user
+    userInfo.value = userStore.userInfo
     loadPapers()
 })
 </script>

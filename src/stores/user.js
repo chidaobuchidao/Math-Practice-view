@@ -14,19 +14,20 @@ export const useUserStore = defineStore('user', () => {
   // actions
   const setUserInfo = (info) => {
     userInfo.value = info
-    // 同时保存到localStorage
-    localStorage.setItem('currentUser', JSON.stringify(info))
+    // 使用 sessionStorage 替代 localStorage
+    sessionStorage.setItem('currentUser', JSON.stringify(info))
   }
 
   const clearUserInfo = () => {
     userInfo.value = null
     token.value = ''
-    localStorage.removeItem('currentUser')
+    sessionStorage.removeItem('currentUser')
+    localStorage.removeItem('currentUser') // 清理可能存在的旧数据
   }
 
-  // 初始化时从localStorage读取
+  // 初始化时从 sessionStorage 读取
   const initFromStorage = () => {
-    const stored = localStorage.getItem('currentUser')
+    const stored = sessionStorage.getItem('currentUser')
     if (stored) {
       userInfo.value = JSON.parse(stored)
     }

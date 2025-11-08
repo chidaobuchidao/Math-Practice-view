@@ -39,9 +39,11 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { login } from '../api/user.js'  // 或相对路径调整
+import { login } from '../api/user.js'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const loginFormRef = ref()
 
@@ -73,8 +75,8 @@ const handleLogin = async () => {
 
         // 检查userData是否存在且包含必要的字段
         if (userData && userData.id && userData.username) {
-            // 保存用户信息到本地存储
-            localStorage.setItem('currentUser', JSON.stringify(userData))
+            // 使用 userStore 来设置用户信息，它会自动保存到 sessionStorage
+            userStore.setUserInfo(userData)
 
             ElMessage.success(`欢迎回来，${userData.username}！`)
 
@@ -111,10 +113,6 @@ const goToRegister = () => {
     router.push('/register')
 }
 </script>
-
-<style scoped>
-/* 样式保持不变 */
-</style>
 
 <style scoped>
 .login-container {
