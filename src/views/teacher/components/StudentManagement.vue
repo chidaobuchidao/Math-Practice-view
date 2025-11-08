@@ -18,51 +18,8 @@
       </div>
     </div>
 
-    <!-- 学生列表 -->
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>学生列表</span>
-          <div class="header-stats">
-            共 <el-tag type="primary">{{ students.length }}</el-tag> 名学生
-          </div>
-        </div>
-      </template>
-
-      <el-table :data="students" v-loading="loading" style="width: 100%">
-        <el-table-column prop="id" label="学生ID" width="100" align="center" />
-        <el-table-column prop="username" label="用户名" width="150" />
-        <el-table-column prop="userClass" label="班级" width="150">
-          <template #default="{ row }">
-            <el-tag v-if="row.userClass" type="success">{{ row.userClass }}</el-tag>
-            <el-tag v-else type="info">未设置</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createdAt" label="注册时间" width="180">
-          <template #default="{ row }">
-            {{ formatDate(row.createdAt) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
-          <template #default>
-            <el-tag type="success">正常</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="viewStudentPapers(row)">
-              查看试卷
-            </el-button>
-            <el-button type="danger" size="small" @click="handleDeleteStudent(row.id)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
     <!-- 统计信息 -->
-    <el-row :gutter="20" style="margin-top: 20px;">
+    <el-row :gutter="20" style="margin-top: 20px; margin-bottom: 20px;">
       <el-col :span="8">
         <el-card class="stats-card">
           <div class="stats-content">
@@ -111,6 +68,49 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 学生列表 -->
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <span>学生列表</span>
+          <div class="header-stats">
+            共 <el-tag type="primary">{{ students.length }}</el-tag> 名学生
+          </div>
+        </div>
+      </template>
+
+      <el-table :data="students" v-loading="loading" style="width: 100%">
+        <el-table-column prop="id" label="学生ID" width="100" align="center" />
+        <el-table-column prop="username" label="用户名" width="150" />
+        <el-table-column prop="userClass" label="班级" width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.userClass" type="success">{{ row.userClass }}</el-tag>
+            <el-tag v-else type="info">未设置</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="注册时间" width="180">
+          <template #default="{ row }">
+            {{ formatDate(row.createdAt) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100" align="center">
+          <template #default>
+            <el-tag type="success">正常</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="viewStudentPapers(row)">
+              查看试卷
+            </el-button>
+            <el-button type="danger" size="small" @click="handleDeleteStudent(row.id)">
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
 
     <!-- 添加学生对话框 -->
     <el-dialog v-model="showAddDialog" title="添加学生" width="500px">
@@ -169,6 +169,67 @@
         <el-button @click="showPapersDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 试卷详情对话框 -->
+    <el-dialog v-model="showPaperDetailDialog" :title="`试卷详情 - ${currentPaperDetail?.paper?.title || '未知试卷'}`"
+      width="900px">
+      <div v-if="currentPaperDetail">
+        <!-- 试卷基本信息 -->
+        <el-card style="margin-bottom: 20px;">
+          <template #header>
+            <div class="card-header">
+              <span>试卷信息</span>
+            </div>
+          </template>
+          <el-descriptions :column="3" border>
+            <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
+            <el-descriptions-item label="试卷标题">{{ currentPaperDetail.paper.title }}</el-descriptions-item>
+            <el-descriptions-item label="总题数">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
+            <el-descriptions-item label="正确题数">{{ currentPaperDetail.paper.correctCount }}</el-descriptions-item>
+            <el-descriptions-item label="得分">{{ currentPaperDetail.paper.score }}</el-descriptions-item>
+            <el-descriptions-item label="用时">{{ currentPaperDetail.paper.timeSpent }}秒</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatDate(currentPaperDetail.paper.createdAt)
+              }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+        <!-- 题目列表 -->
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>题目列表 (共 {{ currentPaperDetail.questions.length }} 题)</span>
+            </div>
+          </template>
+          <el-table :data="currentPaperDetail.questions" style="width: 100%">
+            <el-table-column prop="id" label="题目ID" width="80" align="center" />
+            <el-table-column prop="content" label="题目内容" min-width="200" />
+            <el-table-column prop="type" label="类型" width="120">
+              <template #default="{ row }">
+                <el-tag :type="getTypeTagType(row.type)">
+                  {{ getTypeText(row.type) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="difficulty" label="难度" width="100">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.difficulty === 'easy' ? 'success' : row.difficulty === 'medium' ? 'warning' : 'danger'">
+                  {{ row.difficulty === 'easy' ? '简单' : row.difficulty === 'medium' ? '中等' : '困难' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="answer" label="答案" width="100" align="center">
+              <template #default="{ row }">
+                <strong>{{ row.answer }}</strong>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </div>
+
+      <template #footer>
+        <el-button @click="showPaperDetailDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -184,9 +245,11 @@ const loading = ref(false)
 const adding = ref(false)
 const showAddDialog = ref(false)
 const showPapersDialog = ref(false)
+const showPaperDetailDialog = ref(false) // 新增：试卷详情对话框
 const papersLoading = ref(false)
 const studentPapers = ref([])
 const selectedStudent = ref(null)
+const currentPaperDetail = ref(null) // 新增：当前试卷详情
 
 const studentFormRef = ref()
 
@@ -315,11 +378,31 @@ const viewStudentPapers = async (student) => {
 const viewPaperDetail = async (paperId) => {
   try {
     const response = await paperApi.getPaperDetail(paperId)
-    ElMessage.info(`试卷详情加载成功，包含 ${response.data.questions?.length || 0} 道题目`)
-    // 这里可以打开一个新的对话框显示试卷详情
+    currentPaperDetail.value = response.data // 保存完整的试卷详情
+    showPaperDetailDialog.value = true // 打开详情对话框
+
+    ElMessage.success('试卷详情加载成功')
   } catch (error) {
     ElMessage.error('加载试卷详情失败: ' + error.message)
   }
+}
+
+const getTypeText = (type) => {
+  const map = {
+    'AddAndSub': '加减运算',
+    'MulAndDiv': '乘除运算',
+    'Mixed': '混合运算'
+  }
+  return map[type] || type
+}
+
+const getTypeTagType = (type) => {
+  const map = {
+    'AddAndSub': 'success',
+    'MulAndDiv': 'primary',
+    'Mixed': 'warning'
+  }
+  return map[type] || 'info'
 }
 
 // 格式化日期

@@ -64,15 +64,49 @@
           <el-input v-model="paperForm.title" placeholder="请输入试卷标题，如：三年级数学期中测试" />
         </el-form-item>
 
-        <el-form-item label="选择学生" prop="studentId">
+        <!-- 修改为发布范围选择 -->
+        <el-form-item label="发布范围" prop="targetType">
+          <el-radio-group v-model="paperForm.targetType" @change="handleTargetTypeChange">
+            <el-radio label="student">单个学生</el-radio>
+            <el-radio label="class">整个班级</el-radio>
+            <el-radio label="grade">整个年级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <!-- 单个学生选择 -->
+        <el-form-item v-if="paperForm.targetType === 'student'" label="选择学生" prop="studentId">
           <el-select v-model="paperForm.studentId" placeholder="请选择学生" style="width: 100%">
             <el-option v-for="student in students" :key="student.id"
               :label="`${student.username} (${student.userClass || '未设置班级'})`" :value="student.id" />
           </el-select>
         </el-form-item>
 
-        <!-- 移除这里的 template 标签 -->
+        <!-- 班级选择 -->
+        <el-form-item v-if="paperForm.targetType === 'class'" label="选择班级" prop="classNames">
+          <el-select v-model="paperForm.classNames" multiple placeholder="请选择班级" style="width: 100%">
+            <el-option v-for="className in classList" :key="className" :label="className" :value="className" />
+          </el-select>
+          <div class="selection-info" v-if="paperForm.classNames.length > 0">
+            已选择 {{ paperForm.classNames.length }} 个班级，共 {{ getSelectedClassStudentCount() }} 名学生
+          </div>
+        </el-form-item>
 
+        <!-- 年级选择 -->
+        <el-form-item v-if="paperForm.targetType === 'grade'" label="选择年级" prop="grade">
+          <el-select v-model="paperForm.grade" placeholder="请选择年级" style="width: 100%">
+            <el-option label="一年级" value="1" />
+            <el-option label="二年级" value="2" />
+            <el-option label="三年级" value="3" />
+            <el-option label="四年级" value="4" />
+            <el-option label="五年级" value="5" />
+            <el-option label="六年级" value="6" />
+          </el-select>
+          <div class="selection-info" v-if="paperForm.grade">
+            将向 {{ getGradeStudentCount() }} 名学生发布试卷
+          </div>
+        </el-form-item>
+
+        <!-- 题目选择部分保持不变 -->
         <el-form-item label="选择题目" prop="questionIds">
           <div class="questions-selector">
             <div class="selector-header">
@@ -81,7 +115,7 @@
               <el-button type="text" @click="clearSelection">清空</el-button>
             </div>
 
-            <!-- 在这里添加随机选择控件 -->
+            <!-- 随机选择控件 -->
             <div class="random-selector" v-if="availableQuestions.length > 0">
               <el-form :model="randomSelectForm" inline>
                 <el-form-item label="随机选择">
@@ -101,7 +135,7 @@
                 <el-form-item label="类型">
                   <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 120px">
                     <el-option label="不限" value=""></el-option>
-                    <el-option label="加减运算" value="AddAdnSub"></el-option>
+                    <el-option label="加减运算" value="AddAndSub"></el-option>
                     <el-option label="乘除运算" value="MulAndDiv"></el-option>
                     <el-option label="混合运算" value="Mixed"></el-option>
                   </el-select>
@@ -151,13 +185,13 @@
       </template>
     </el-dialog>
 
-    <!-- 试卷详情对话框 -->
+    <!-- 试卷详情对话框保持不变 -->
     <el-dialog v-model="showDetailDialog" :title="`试卷详情 - ${currentPaper?.title}`" width="900px">
       <div v-if="currentPaperDetail">
         <el-descriptions :column="2" border style="margin-bottom: 20px;">
           <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
           <el-descriptions-item label="学生">{{ getStudentName(currentPaperDetail.paper.studentId)
-            }}</el-descriptions-item>
+          }}</el-descriptions-item>
           <el-descriptions-item label="题目数量">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
           <el-descriptions-item label="得分">
             <span v-if="currentPaperDetail.paper.score !== null && currentPaperDetail.paper.score !== undefined">
@@ -198,7 +232,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { userApi } from '@/api/user'
@@ -217,29 +251,104 @@ const currentPaperDetail = ref(null)
 
 const paperFormRef = ref()
 
+// 修改表单数据结构
 const paperForm = reactive({
   title: '',
-  studentId: null,
+  targetType: 'student', // student, class, grade
+  studentId: null,       // 单个学生ID
+  classNames: [],        // 班级名称数组
+  grade: '',             // 年级
   questionIds: []
 })
 
+// 更新验证规则
 const paperRules = {
   title: [
     { required: true, message: '请输入试卷标题', trigger: 'blur' }
   ],
   studentId: [
-    { required: true, message: '请选择学生', trigger: 'change' }
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        if (paperForm.targetType === 'student' && !value) {
+          callback(new Error('请选择学生'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  classNames: [
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        if (paperForm.targetType === 'class' && (!value || value.length === 0)) {
+          callback(new Error('请至少选择一个班级'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  grade: [
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        if (paperForm.targetType === 'grade' && !value) {
+          callback(new Error('请选择年级'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
   ],
   questionIds: [
     { required: true, message: '请至少选择一道题目', trigger: 'change' }
   ]
 }
 
+// 计算班级列表
+const classList = computed(() => {
+  const classes = new Set(students.value.map(student => student.userClass).filter(Boolean))
+  return Array.from(classes)
+})
+
+// 处理发布范围类型变化
+const handleTargetTypeChange = () => {
+  // 清空其他类型的值
+  paperForm.studentId = null
+  paperForm.classNames = []
+  paperForm.grade = ''
+}
+
+// 获取选中班级的学生数量
+const getSelectedClassStudentCount = () => {
+  if (paperForm.targetType !== 'class' || paperForm.classNames.length === 0) {
+    return 0
+  }
+  return students.value.filter(student =>
+    paperForm.classNames.includes(student.userClass)
+  ).length
+}
+
+// 获取年级学生数量
+const getGradeStudentCount = () => {
+  if (paperForm.targetType !== 'grade' || !paperForm.grade) {
+    return 0
+  }
+  // 这里假设班级名称以年级开头，如"三年级一班"
+  return students.value.filter(student =>
+    student.userClass && student.userClass.startsWith(paperForm.grade)
+  ).length
+}
+
 // 加载试卷列表
 const loadPapers = async () => {
   try {
     loading.value = true
-    // 调用 API 获取所有试卷列表
     const response = await paperApi.getAllPapers()
     papers.value = response.data || []
     ElMessage.success(`成功加载 ${papers.value.length} 份试卷`)
@@ -271,7 +380,7 @@ const loadAvailableQuestions = async () => {
   }
 }
 
-// 添加随机选择表单
+// 随机选择表单
 const randomSelectForm = reactive({
   count: 5,
   difficulty: '',
@@ -280,15 +389,12 @@ const randomSelectForm = reactive({
 
 // 随机选择题目方法
 const randomSelectQuestions = () => {
-  // 获取符合条件的题目
   let filteredQuestions = [...availableQuestions.value]
 
-  // 根据难度过滤
   if (randomSelectForm.difficulty) {
     filteredQuestions = filteredQuestions.filter(q => q.difficulty === randomSelectForm.difficulty)
   }
 
-  // 根据类型过滤
   if (randomSelectForm.type) {
     filteredQuestions = filteredQuestions.filter(q => q.type === randomSelectForm.type)
   }
@@ -298,21 +404,16 @@ const randomSelectQuestions = () => {
     return
   }
 
-  // 如果选择数量超过符合条件的题目数量，则调整为最大数量
   const count = Math.min(randomSelectForm.count, filteredQuestions.length)
-
-  // 随机打乱数组
   const shuffled = [...filteredQuestions].sort(() => 0.5 - Math.random())
-
-  // 取前count个题目
   const selectedQuestions = shuffled.slice(0, count)
 
-  // 更新选择的题目ID
   paperForm.questionIds = selectedQuestions.map(q => q.id)
 
   ElMessage.success(`成功随机选择了 ${count} 道题目`)
 }
-// 生成试卷
+
+// 生成试卷（修改为支持批量生成）
 const handleGeneratePaper = async () => {
   try {
     await paperFormRef.value.validate()
@@ -324,14 +425,53 @@ const handleGeneratePaper = async () => {
 
     generating.value = true
 
-    const response = await paperApi.generatePaper(paperForm)
-    ElMessage.success('试卷生成成功')
+    // 根据不同的发布范围确定目标学生
+    let targetStudents = []
+
+    if (paperForm.targetType === 'student') {
+      // 单个学生
+      const student = students.value.find(s => s.id === paperForm.studentId)
+      if (student) {
+        targetStudents = [student]
+      }
+    } else if (paperForm.targetType === 'class') {
+      // 整个班级
+      targetStudents = students.value.filter(student =>
+        paperForm.classNames.includes(student.userClass)
+      )
+    } else if (paperForm.targetType === 'grade') {
+      // 整个年级
+      targetStudents = students.value.filter(student =>
+        student.userClass && student.userClass.startsWith(paperForm.grade)
+      )
+    }
+
+    if (targetStudents.length === 0) {
+      ElMessage.warning('没有找到符合条件的学生')
+      return
+    }
+
+    // 批量生成试卷
+    const generatePromises = targetStudents.map(student => {
+      const paperData = {
+        title: paperForm.title,
+        studentId: student.id,
+        questionIds: paperForm.questionIds
+      }
+      return paperApi.generatePaper(paperData)
+    })
+
+    await Promise.all(generatePromises)
+    ElMessage.success(`成功为 ${targetStudents.length} 名学生生成试卷`)
     showGenerateDialog.value = false
 
     // 重置表单
     Object.assign(paperForm, {
       title: '',
+      targetType: 'student',
       studentId: null,
+      classNames: [],
+      grade: '',
       questionIds: []
     })
 
@@ -355,7 +495,7 @@ const handleDeletePaper = async (paperId) => {
 
     await paperApi.deletePaper(paperId)
     ElMessage.success('试卷删除成功')
-    loadPapers() // 重新加载列表
+    loadPapers()
   } catch (error) {
     if (error.message && !error.message.includes('cancel')) {
       ElMessage.error('删除试卷失败: ' + error.message)
@@ -403,7 +543,7 @@ const getTypeText = (type) => {
 
 const getTypeTagType = (type) => {
   const map = {
-    'AddAdnSub': 'primary',
+    'AddAndSub': 'primary',
     'MulAndDiv': 'success',
     'Mixed': 'warning'
   }
@@ -544,5 +684,11 @@ onMounted(() => {
 
 .random-selector .el-form-item:last-child {
   margin-right: 0;
+}
+
+.selection-info {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
 }
 </style>

@@ -234,13 +234,18 @@ onMounted(() => {
 }
 
 .dashboard-card {
+  border: 1px solid #ebeef5;
+  /* 添加边框 */
   border-radius: 12px;
-  border: none;
   transition: transform 0.3s ease;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  /* 添加阴影效果 */
 }
 
 .dashboard-card:hover {
   transform: translateY(-5px);
+  border-color: #31333534;
+  /* 悬停时改变边框颜色 */
 }
 
 .dashboard-content {
