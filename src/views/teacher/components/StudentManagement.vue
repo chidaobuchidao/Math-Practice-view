@@ -275,11 +275,11 @@ const validateConfirmPassword = (rule, value, callback) => {
 const studentRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, message: '用户名长度不能少于3位', trigger: 'blur' }
+    { min: 1, message: '用户名不能为空', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于6位', trigger: 'blur' }
+    { min: 1, message: '密码不能为空', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },

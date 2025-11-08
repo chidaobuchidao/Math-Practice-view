@@ -339,9 +339,27 @@ const getGradeStudentCount = () => {
   if (paperForm.targetType !== 'grade' || !paperForm.grade) {
     return 0
   }
-  // 这里假设班级名称以年级开头，如"三年级一班"
+
+  // 将数字年级转换为中文
+  const gradeMap = {
+    '1': '一',
+    '2': '二',
+    '3': '三',
+    '4': '四',
+    '5': '五',
+    '6': '六'
+  }
+
+  const chineseGrade = gradeMap[paperForm.grade]
+
+  // 检查班级名称是否包含中文年级
   return students.value.filter(student =>
-    student.userClass && student.userClass.startsWith(paperForm.grade)
+    student.userClass && (
+      // 匹配 "四年级一班"、"四年一班"、"四班" 等格式
+      student.userClass.includes(`${chineseGrade}年`) ||
+      student.userClass.startsWith(chineseGrade) ||
+      student.userClass.startsWith(paperForm.grade)
+    )
   ).length
 }
 
@@ -455,9 +473,24 @@ const handleGeneratePaper = async () => {
         paperForm.classNames.includes(student.userClass)
       )
     } else if (paperForm.targetType === 'grade') {
-      // 整个年级
+      // 整个年级 - 使用改进的年级匹配逻辑
+      const gradeMap = {
+        '1': '一',
+        '2': '二',
+        '3': '三',
+        '4': '四',
+        '5': '五',
+        '6': '六'
+      }
+
+      const chineseGrade = gradeMap[paperForm.grade]
+
       targetStudents = students.value.filter(student =>
-        student.userClass && student.userClass.startsWith(paperForm.grade)
+        student.userClass && (
+          student.userClass.includes(`${chineseGrade}年`) ||
+          student.userClass.startsWith(chineseGrade) ||
+          student.userClass.startsWith(paperForm.grade)
+        )
       )
     }
 
