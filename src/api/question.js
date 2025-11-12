@@ -33,4 +33,13 @@ export const questionApi = {
   deleteQuestion(questionId) {
     return request.delete(`/questions/${questionId}`)
   },
+
+  /*-----------------------题目自动生成器--------------------------- */
+  generateQuestions: (data) => {
+    return request.post('/api/questions/generate', data)
+  },
+  
+  generateQuickQuestions: (count, createdBy) => {
+    return request.post(`/api/questions/generate/quick?count=${count}&createdBy=${createdBy}`)
+  }
 }

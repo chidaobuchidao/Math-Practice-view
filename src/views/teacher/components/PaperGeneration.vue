@@ -111,8 +111,8 @@
           <div class="questions-selector">
             <div class="selector-header">
               <span>已选择 {{ paperForm.questionIds.length }} 道题目</span>
-              <el-button type="text" @click="selectAllQuestions">全选</el-button>
-              <el-button type="text" @click="clearSelection">清空</el-button>
+              <el-button type="link" @click="selectAllQuestions">全选</el-button>
+              <el-button type="link" @click="clearSelection">清空</el-button>
             </div>
 
             <!-- 随机选择控件 -->
@@ -592,8 +592,8 @@ const getTypeText = (type) => {
 
 const getTypeTagType = (type) => {
   const map = {
-    'AddAndSub': 'primary',
-    'MulAndDiv': 'success',
+    'AddAndSub': 'success',
+    'MulAndDiv': 'primary',
     'Mixed': 'warning'
   }
   return map[type] || 'info'

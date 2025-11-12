@@ -9,12 +9,24 @@
       <div class="filters-container">
         <div class="filters-left"></div> <!-- 左侧占位，用于将内容推到右侧 -->
         <div class="toolbar-actions">
-          <el-button type="primary" @click="showAddDialog = true">
-            <el-icon>
-              <Plus />
-            </el-icon>
-            添加题目
-          </el-button>
+          <el-dropdown @command="handleGenerateCommand">
+            <el-button type="primary">
+              <el-icon>
+                <Plus />
+              </el-icon>
+              生成题目
+              <el-icon class="el-icon--right">
+                <arrow-down />
+              </el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="manual">手动添加题目</el-dropdown-item>
+                <el-dropdown-item command="auto">自动生成题目</el-dropdown-item>
+                <el-dropdown-item command="quick" divided>快速生成10题</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
         <div class="filters-right">
           <el-select v-model="filterType" placeholder="题目类型" clearable class="filter-item">
@@ -44,7 +56,6 @@
         </div>
       </div>
     </el-card>
-
 
     <!-- 统计信息 -->
     <el-row gutter="20" style="margin-top: 20px; margin-bottom: 20px;">
@@ -140,8 +151,8 @@
       </el-table>
     </el-card>
 
-    <!-- 添加/编辑题目对话框 -->
-    <el-dialog v-model="showAddDialog" :title="dialogTitle" width="500px">
+    <!-- 手动添加/编辑题目对话框 -->
+    <el-dialog v-model="showManualDialog" :title="dialogTitle" width="500px">
       <el-form :model="formData" :rules="questionRules" ref="questionFormRef">
         <el-form-item label="题目内容" prop="content">
           <el-input v-model="formData.content" placeholder="请输入题目内容" />
@@ -169,9 +180,91 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
+        <el-button @click="showManualDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
           {{ isEditing ? '保存修改' : '确认添加' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 自动生成题目对话框 -->
+    <el-dialog v-model="showAutoDialog" title="自动生成题目" width="600px">
+      <el-form :model="generateForm" :rules="generateRules" ref="generateFormRef" label-width="120px">
+        <el-form-item label="题目数量" prop="count">
+          <el-input-number 
+            v-model="generateForm.count" 
+            :min="1" 
+            :max="100" 
+            placeholder="请输入生成题目数量" 
+            style="width: 200px;" />
+          <div class="form-tip">单次最多生成100道题目</div>
+        </el-form-item>
+
+        <el-form-item label="题目类型" prop="types">
+          <el-checkbox-group v-model="generateForm.types">
+            <el-checkbox label="AddAndSub">加减运算</el-checkbox>
+            <el-checkbox label="MulAndDiv">乘除运算</el-checkbox>
+            <el-checkbox label="Mixed">混合运算</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item label="难度等级" prop="difficulties">
+          <el-checkbox-group v-model="generateForm.difficulties">
+            <el-checkbox label="easy">简单</el-checkbox>
+            <el-checkbox label="medium">中等</el-checkbox>
+            <el-checkbox label="hard">困难</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-collapse v-model="activeCollapse" style="margin: 20px 0;">
+          <el-collapse-item title="高级设置（数字范围）" name="advanced">
+            <el-form-item label="加减法范围">
+              <el-input-number v-model="generateForm.numberRange.addSubMin" :min="1" :max="generateForm.numberRange.addSubMax" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.addSubMax" :min="generateForm.numberRange.addSubMin" :max="1000" />
+            </el-form-item>
+
+            <el-form-item label="乘法范围">
+              <el-input-number v-model="generateForm.numberRange.multiplicationMin" :min="1" :max="generateForm.numberRange.multiplicationMax" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.multiplicationMax" :min="generateForm.numberRange.multiplicationMin" :max="100" />
+            </el-form-item>
+
+            <el-form-item label="除法范围">
+              <el-input-number v-model="generateForm.numberRange.divisionMin" :min="1" :max="generateForm.numberRange.divisionMax" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.divisionMax" :min="generateForm.numberRange.divisionMin" :max="100" />
+            </el-form-item>
+
+            <el-form-item label="混合运算范围">
+              <el-input-number v-model="generateForm.numberRange.mixedMin" :min="1" :max="generateForm.numberRange.mixedMax" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.mixedMax" :min="generateForm.numberRange.mixedMin" :max="1000" />
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
+
+        <el-form-item label="预览设置">
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="题目数量">{{ generateForm.count }}</el-descriptions-item>
+            <el-descriptions-item label="题目类型">
+              {{ generateForm.types.map(type => getTypeText(type)).join('、') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="难度等级">
+              {{ generateForm.difficulties.map(diff => getDifficultyText(diff)).join('、') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="总类型组合">
+              {{ generateForm.types.length * generateForm.difficulties.length }} 种
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="showAutoDialog = false">取消</el-button>
+        <el-button @click="resetGenerateForm" :disabled="generating">重置</el-button>
+        <el-button type="primary" @click="handleGenerate" :loading="generating">
+          开始生成
         </el-button>
       </template>
     </el-dialog>
@@ -181,7 +274,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Search, Collection, TrendCharts, DataAnalysis } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Collection, TrendCharts, DataAnalysis, ArrowDown } from '@element-plus/icons-vue'
 import { questionApi } from '@/api/question'
 import { useUserStore } from '@/stores/user'
 
@@ -189,15 +282,19 @@ const userStore = useUserStore()
 
 const questions = ref([])
 const loading = ref(false)
-const showAddDialog = ref(false)
+const showManualDialog = ref(false)
+const showAutoDialog = ref(false)
 const submitting = ref(false)
+const generating = ref(false)
 const isEditing = ref(false)
 const filterType = ref('')
 const filterDifficulty = ref('')
+const activeCollapse = ref([])
 
 const questionFormRef = ref()
+const generateFormRef = ref()
 
-// 表单数据
+// 手动添加表单数据
 const formData = reactive({
   id: null,
   content: '',
@@ -207,9 +304,27 @@ const formData = reactive({
   createdBy: userStore.userInfo?.id
 })
 
+// 自动生成表单数据
+const generateForm = reactive({
+  count: 10,
+  types: ['AddAndSub', 'MulAndDiv', 'Mixed'],
+  difficulties: ['easy', 'medium', 'hard'],
+  createdBy: userStore.userInfo?.id,
+  numberRange: {
+    addSubMin: 1,
+    addSubMax: 100,
+    multiplicationMin: 1,
+    multiplicationMax: 12,
+    divisionMin: 1,
+    divisionMax: 12,
+    mixedMin: 1,
+    mixedMax: 100
+  }
+})
+
 // 计算对话框标题
 const dialogTitle = computed(() => {
-  return isEditing.value ? '编辑题目' : '添加题目'
+  return isEditing.value ? '编辑题目' : '手动添加题目'
 })
 
 // 计算统计信息
@@ -223,11 +338,108 @@ const difficultyCount = computed(() => {
   return difficulties.size
 })
 
+// 验证规则
 const questionRules = {
   content: [{ required: true, message: '请输入题目内容', trigger: 'blur' }],
   type: [{ required: true, message: '请选择题目类型', trigger: 'change' }],
   difficulty: [{ required: true, message: '请选择难度', trigger: 'change' }],
   answer: [{ required: true, message: '请输入答案', trigger: 'blur' }]
+}
+
+const generateRules = {
+  count: [
+    { required: true, message: '请输入题目数量', trigger: 'blur' },
+    { type: 'number', min: 1, max: 100, message: '题目数量范围为1-100', trigger: 'blur' }
+  ],
+  types: [
+    { required: true, message: '请至少选择一种题目类型', trigger: 'change' }
+  ],
+  difficulties: [
+    { required: true, message: '请至少选择一种难度等级', trigger: 'change' }
+  ]
+}
+
+// 处理生成命令
+const handleGenerateCommand = (command) => {
+  switch (command) {
+    case 'manual':
+      showManualDialog.value = true
+      break
+    case 'auto':
+      showAutoDialog.value = true
+      break
+    case 'quick':
+      handleQuickGenerate()
+      break
+  }
+}
+
+// 快速生成10题
+const handleQuickGenerate = async () => {
+  try {
+    generating.value = true
+    const response = await questionApi.generateQuickQuestions(10, userStore.userInfo?.id)
+    
+    if (response.code === 200) {
+      ElMessage.success(`成功生成 ${response.data.length} 道题目`)
+      loadQuestions()
+    } else {
+      ElMessage.error(response.message || '生成题目失败')
+    }
+  } catch (error) {
+    ElMessage.error('快速生成题目失败: ' + error.message)
+  } finally {
+    generating.value = false
+  }
+}
+
+// 自动生成题目
+const handleGenerate = async () => {
+  try {
+    await generateFormRef.value.validate()
+    generating.value = true
+
+    const requestData = {
+      ...generateForm,
+      createdBy: userStore.userInfo?.id
+    }
+
+    const response = await questionApi.generateQuestions(requestData)
+    
+    if (response.code === 200) {
+      ElMessage.success(`成功生成 ${response.data.length} 道题目`)
+      showAutoDialog.value = false
+      loadQuestions()
+    } else {
+      ElMessage.error(response.message || '生成题目失败')
+    }
+  } catch (error) {
+    if (error.message) {
+      ElMessage.error('生成题目失败: ' + error.message)
+    }
+  } finally {
+    generating.value = false
+  }
+}
+
+// 重置生成表单
+const resetGenerateForm = () => {
+  Object.assign(generateForm, {
+    count: 10,
+    types: ['AddAndSub', 'MulAndDiv', 'Mixed'],
+    difficulties: ['easy', 'medium', 'hard'],
+    numberRange: {
+      addSubMin: 1,
+      addSubMax: 100,
+      multiplicationMin: 1,
+      multiplicationMax: 12,
+      divisionMin: 1,
+      divisionMax: 12,
+      mixedMin: 1,
+      mixedMax: 100
+    }
+  })
+  generateFormRef.value?.clearValidate()
 }
 
 // 重置筛选条件
@@ -272,7 +484,7 @@ const handleEdit = (row) => {
     createdBy: userStore.userInfo?.id
   })
   isEditing.value = true
-  showAddDialog.value = true
+  showManualDialog.value = true
 }
 
 // 提交表单（添加或编辑）
@@ -289,7 +501,7 @@ const handleSubmit = async () => {
       ElMessage.success('题目添加成功')
     }
 
-    showAddDialog.value = false
+    showManualDialog.value = false
     resetForm()
     loadQuestions()
   } catch (error) {
@@ -406,11 +618,8 @@ onMounted(() => {
 /* 筛选工具栏样式 */
 .filter-card {
   border: 1px solid #ebeef5;
-  /* 添加边框，参考 Element Plus 默认边框颜色 */
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-  /* 添加轻微阴影，参考其他卡片 */
   border-radius: 4px;
-  /* 添加圆角 */
 }
 
 .filter-card :deep(.el-card__body) {
@@ -492,5 +701,17 @@ onMounted(() => {
 .stats-label {
   color: #909399;
   font-size: 14px;
+}
+
+/* 表单提示样式 */
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
+}
+
+/* 下拉菜单样式调整 */
+:deep(.el-dropdown) {
+  margin-right: 10px;
 }
 </style>

@@ -27,7 +27,7 @@
             </el-form>
 
             <div class="login-footer">
-                <el-button type="text" @click="goToRegister">
+                <el-button type="link" @click="goToRegister">
                     还没有账号？立即注册
                 </el-button>
             </div>

@@ -76,7 +76,7 @@
       <template #header>
         <div class="card-header">
           <span>最近活动</span>
-          <el-button type="text" @click="clearActivities" size="small">清空记录</el-button>
+          <el-button type="link" @click="clearActivities" size="small">清空记录</el-button>
         </div>
       </template>
 

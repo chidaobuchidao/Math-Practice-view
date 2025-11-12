@@ -14,7 +14,6 @@ export const useUserStore = defineStore('user', () => {
   // actions
   const setUserInfo = (info) => {
     userInfo.value = info
-    // 使用 sessionStorage 替代 localStorage
     sessionStorage.setItem('currentUser', JSON.stringify(info))
   }
 
