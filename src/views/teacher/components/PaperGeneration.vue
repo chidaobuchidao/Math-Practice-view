@@ -592,8 +592,8 @@ const getTypeText = (type) => {
 
 const getTypeTagType = (type) => {
   const map = {
-    'AddAndSub': 'primary',
-    'MulAndDiv': 'success',
+    'AddAndSub': 'success',
+    'MulAndDiv': 'primary',
     'Mixed': 'warning'
   }
   return map[type] || 'info'
