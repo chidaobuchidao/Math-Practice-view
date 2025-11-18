@@ -33,8 +33,8 @@
         <el-table-column prop="totalQuestions" label="题目数量" width="100" align="center" />
         <el-table-column prop="score" label="得分" width="100" align="center">
           <template #default="{ row }">
-            <span v-if="row.score !== null && row.score !== undefined && row.score >= 0">
-              {{ row.score }} 分
+            <span v-if="row.score !== null && row.score !== undefined">
+              {{ row.score.toFixed(1) }} 分
             </span>
             <el-tag v-else type="info" size="small">未批改</el-tag>
           </template>
@@ -64,12 +64,11 @@
           <el-input v-model="paperForm.title" placeholder="请输入试卷标题，如：三年级数学期中测试" />
         </el-form-item>
 
-        <!-- 修改为发布范围选择 -->
+        <!-- 发布范围选择 -->
         <el-form-item label="发布范围" prop="targetType">
           <el-radio-group v-model="paperForm.targetType" @change="handleTargetTypeChange">
             <el-radio label="student">单个学生</el-radio>
             <el-radio label="class">整个班级</el-radio>
-            <el-radio label="grade">整个年级</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -91,28 +90,13 @@
           </div>
         </el-form-item>
 
-        <!-- 年级选择 -->
-        <el-form-item v-if="paperForm.targetType === 'grade'" label="选择年级" prop="grade">
-          <el-select v-model="paperForm.grade" placeholder="请选择年级" style="width: 100%">
-            <el-option label="一年级" value="1" />
-            <el-option label="二年级" value="2" />
-            <el-option label="三年级" value="3" />
-            <el-option label="四年级" value="4" />
-            <el-option label="五年级" value="5" />
-            <el-option label="六年级" value="6" />
-          </el-select>
-          <div class="selection-info" v-if="paperForm.grade">
-            将向 {{ getGradeStudentCount() }} 名学生发布试卷
-          </div>
-        </el-form-item>
-
-        <!-- 题目选择部分保持不变 -->
+        <!-- 题目选择部分 -->
         <el-form-item label="选择题目" prop="questionIds">
           <div class="questions-selector">
             <div class="selector-header">
               <span>已选择 {{ paperForm.questionIds.length }} 道题目</span>
-              <el-button type="link" @click="selectAllQuestions">全选</el-button>
-              <el-button type="link" @click="clearSelection">清空</el-button>
+              <el-button type="text" @click="selectAllQuestions">全选</el-button>
+              <el-button type="text" @click="clearSelection">清空</el-button>
             </div>
 
             <!-- 随机选择控件 -->
@@ -126,18 +110,15 @@
                 <el-form-item label="难度">
                   <el-select v-model="randomSelectForm.difficulty" clearable size="small" style="width: 100px">
                     <el-option label="不限" value=""></el-option>
-                    <el-option label="简单" value="easy"></el-option>
-                    <el-option label="中等" value="medium"></el-option>
-                    <el-option label="困难" value="hard"></el-option>
+                    <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
+                      :value="difficulty.id" />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item label="类型">
                   <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 120px">
                     <el-option label="不限" value=""></el-option>
-                    <el-option label="加减运算" value="AddAndSub"></el-option>
-                    <el-option label="乘除运算" value="MulAndDiv"></el-option>
-                    <el-option label="混合运算" value="Mixed"></el-option>
+                    <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
                   </el-select>
                 </el-form-item>
 
@@ -156,13 +137,13 @@
                     <div class="question-content">
                       <span class="question-text">{{ question.content }}</span>
                       <div class="question-meta">
-                        <el-tag size="small" :type="getTypeTagType(question.type)">
-                          {{ getTypeText(question.type) }}
+                        <el-tag size="small" :type="getTypeTagType(question.typeId)">
+                          {{ getTypeName(question.typeId) }}
                         </el-tag>
-                        <el-tag size="small" :type="getDifficultyTagType(question.difficulty)">
-                          {{ getDifficultyText(question.difficulty) }}
+                        <el-tag size="small" :type="getDifficultyTagType(question.difficultyId)">
+                          {{ getDifficultyName(question.difficultyId) }}
                         </el-tag>
-                        <span class="answer">答案: {{ question.answer }}</span>
+                        <span class="answer">答案: {{ getQuestionAnswer(question.answers) }}</span>
                       </div>
                     </div>
                   </el-checkbox>
@@ -185,17 +166,17 @@
       </template>
     </el-dialog>
 
-    <!-- 试卷详情对话框保持不变 -->
+    <!-- 试卷详情对话框 -->
     <el-dialog v-model="showDetailDialog" :title="`试卷详情 - ${currentPaper?.title}`" width="900px">
       <div v-if="currentPaperDetail">
         <el-descriptions :column="2" border style="margin-bottom: 20px;">
           <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
           <el-descriptions-item label="学生">{{ getStudentName(currentPaperDetail.paper.studentId)
-          }}</el-descriptions-item>
+            }}</el-descriptions-item>
           <el-descriptions-item label="题目数量">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
           <el-descriptions-item label="得分">
             <span v-if="currentPaperDetail.paper.score !== null && currentPaperDetail.paper.score !== undefined">
-              {{ currentPaperDetail.paper.score }} 分
+              {{ currentPaperDetail.paper.score.toFixed(1) }} 分
             </span>
             <el-tag v-else type="info" size="small">未批改</el-tag>
           </el-descriptions-item>
@@ -206,21 +187,25 @@
         <el-table :data="currentPaperDetail.questions" style="width: 100%">
           <el-table-column prop="id" label="题目ID" width="80" />
           <el-table-column prop="content" label="题目内容" />
-          <el-table-column prop="type" label="类型" width="100">
+          <el-table-column label="类型" width="100">
             <template #default="{ row }">
-              <el-tag size="small" :type="getTypeTagType(row.type)">
-                {{ getTypeText(row.type) }}
+              <el-tag size="small" :type="getTypeTagType(row.typeId)">
+                {{ getTypeName(row.typeId) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="difficulty" label="难度" width="80">
+          <el-table-column label="难度" width="80">
             <template #default="{ row }">
-              <el-tag size="small" :type="getDifficultyTagType(row.difficulty)">
-                {{ getDifficultyText(row.difficulty) }}
+              <el-tag size="small" :type="getDifficultyTagType(row.difficultyId)">
+                {{ getDifficultyName(row.difficultyId) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="answer" label="答案" width="100" />
+          <el-table-column label="答案" width="100">
+            <template #default="{ row }">
+              {{ getQuestionAnswer(row.answers) }}
+            </template>
+          </el-table-column>
         </el-table>
       </div>
 
@@ -238,6 +223,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { userApi } from '@/api/user'
 import { questionApi } from '@/api/question'
 import { paperApi } from '@/api/paper'
+import { getTypeTagType, getDifficultyTagType } from '@/utils/type'
 
 const papers = ref([])
 const loading = ref(false)
@@ -248,20 +234,21 @@ const students = ref([])
 const availableQuestions = ref([])
 const currentPaper = ref(null)
 const currentPaperDetail = ref(null)
+const questionTypes = ref([])
+const difficultyLevels = ref([])
 
 const paperFormRef = ref()
 
-// 修改表单数据结构
+// 表单数据结构
 const paperForm = reactive({
   title: '',
-  targetType: 'student', // student, class, grade
+  targetType: 'student', // student, class
   studentId: null,       // 单个学生ID
   classNames: [],        // 班级名称数组
-  grade: '',             // 年级
   questionIds: []
 })
 
-// 更新验证规则
+// 验证规则
 const paperRules = {
   title: [
     { required: true, message: '请输入试卷标题', trigger: 'blur' }
@@ -292,19 +279,6 @@ const paperRules = {
       trigger: 'change'
     }
   ],
-  grade: [
-    {
-      required: true,
-      validator: (rule, value, callback) => {
-        if (paperForm.targetType === 'grade' && !value) {
-          callback(new Error('请选择年级'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'change'
-    }
-  ],
   questionIds: [
     { required: true, message: '请至少选择一道题目', trigger: 'change' }
   ]
@@ -321,7 +295,6 @@ const handleTargetTypeChange = () => {
   // 清空其他类型的值
   paperForm.studentId = null
   paperForm.classNames = []
-  paperForm.grade = ''
 }
 
 // 获取选中班级的学生数量
@@ -334,33 +307,45 @@ const getSelectedClassStudentCount = () => {
   ).length
 }
 
-// 获取年级学生数量
-const getGradeStudentCount = () => {
-  if (paperForm.targetType !== 'grade' || !paperForm.grade) {
-    return 0
+// 获取题目类型和难度等级
+const loadQuestionTypesAndDifficulties = async () => {
+  try {
+    const [typesResponse, difficultiesResponse] = await Promise.all([
+      questionApi.getQuestionTypes(),
+      questionApi.getDifficultyLevels()
+    ])
+
+    questionTypes.value = typesResponse.data || []
+    difficultyLevels.value = difficultiesResponse.data || []
+  } catch (error) {
+    ElMessage.error('加载题目类型和难度失败: ' + error.message)
+  }
+}
+
+// 更新获取类型名称的方法
+const getTypeName = (typeId) => {
+  const type = questionTypes.value.find(t => t.id === typeId)
+  return type ? type.name : '未知类型'
+}
+
+// 更新获取难度名称的方法  
+const getDifficultyName = (difficultyId) => {
+  const difficulty = difficultyLevels.value.find(d => d.id === difficultyId)
+  return difficulty ? difficulty.name : '未知难度'
+}
+
+// 获取题目答案
+const getQuestionAnswer = (answers) => {
+  if (!answers || answers.length === 0) return '无答案'
+
+  // 查找正确答案
+  const correctAnswer = answers.find(answer => answer.isCorrect)
+  if (correctAnswer) {
+    return correctAnswer.content
   }
 
-  // 将数字年级转换为中文
-  const gradeMap = {
-    '1': '一',
-    '2': '二',
-    '3': '三',
-    '4': '四',
-    '5': '五',
-    '6': '六'
-  }
-
-  const chineseGrade = gradeMap[paperForm.grade]
-
-  // 检查班级名称是否包含中文年级
-  return students.value.filter(student =>
-    student.userClass && (
-      // 匹配 "四年级一班"、"四年一班"、"四班" 等格式
-      student.userClass.includes(`${chineseGrade}年`) ||
-      student.userClass.startsWith(chineseGrade) ||
-      student.userClass.startsWith(paperForm.grade)
-    )
-  ).length
+  // 如果没有标记正确答案，返回第一个答案
+  return answers[0]?.content || '无答案'
 }
 
 // 加载试卷列表
@@ -369,22 +354,6 @@ const loadPapers = async () => {
     loading.value = true
     const response = await paperApi.getAllPapers()
     papers.value = response.data || []
-
-    // 添加调试信息，检查试卷状态
-    console.log('试卷数据详情:')
-    papers.value.forEach(paper => {
-      console.log(`试卷 ${paper.id}:`, {
-        score: paper.score,
-        scoreType: typeof paper.score,
-        isNull: paper.score === null,
-        isUndefined: paper.score === undefined,
-        isZero: paper.score === 0,
-        totalQuestions: paper.totalQuestions,
-        correctCount: paper.correctCount
-      })
-    })
-    // 提示试卷加载成功
-    // ElMessage.success(`成功加载 ${papers.value.length} 份试卷`)
   } catch (error) {
     ElMessage.error('加载试卷列表失败: ' + error.message)
     papers.value = []
@@ -408,6 +377,7 @@ const loadAvailableQuestions = async () => {
   try {
     const response = await questionApi.getAllQuestions()
     availableQuestions.value = response.data || []
+    console.log('可用题目:', availableQuestions.value)
   } catch (error) {
     ElMessage.error('加载题目失败: ' + error.message)
   }
@@ -425,11 +395,15 @@ const randomSelectQuestions = () => {
   let filteredQuestions = [...availableQuestions.value]
 
   if (randomSelectForm.difficulty) {
-    filteredQuestions = filteredQuestions.filter(q => q.difficulty === randomSelectForm.difficulty)
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.difficultyId == randomSelectForm.difficulty
+    )
   }
 
   if (randomSelectForm.type) {
-    filteredQuestions = filteredQuestions.filter(q => q.type === randomSelectForm.type)
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.typeId == randomSelectForm.type
+    )
   }
 
   if (filteredQuestions.length === 0) {
@@ -446,7 +420,7 @@ const randomSelectQuestions = () => {
   ElMessage.success(`成功随机选择了 ${count} 道题目`)
 }
 
-// 生成试卷（修改为支持批量生成）
+// 生成试卷
 const handleGeneratePaper = async () => {
   try {
     await paperFormRef.value.validate()
@@ -471,26 +445,6 @@ const handleGeneratePaper = async () => {
       // 整个班级
       targetStudents = students.value.filter(student =>
         paperForm.classNames.includes(student.userClass)
-      )
-    } else if (paperForm.targetType === 'grade') {
-      // 整个年级 - 使用改进的年级匹配逻辑
-      const gradeMap = {
-        '1': '一',
-        '2': '二',
-        '3': '三',
-        '4': '四',
-        '5': '五',
-        '6': '六'
-      }
-
-      const chineseGrade = gradeMap[paperForm.grade]
-
-      targetStudents = students.value.filter(student =>
-        student.userClass && (
-          student.userClass.includes(`${chineseGrade}年`) ||
-          student.userClass.startsWith(chineseGrade) ||
-          student.userClass.startsWith(paperForm.grade)
-        )
       )
     }
 
@@ -519,7 +473,6 @@ const handleGeneratePaper = async () => {
       targetType: 'student',
       studentId: null,
       classNames: [],
-      grade: '',
       questionIds: []
     })
 
@@ -531,7 +484,6 @@ const handleGeneratePaper = async () => {
     generating.value = false
   }
 }
-
 
 // 删除试卷
 const handleDeletePaper = async (paperId) => {
@@ -580,42 +532,7 @@ const getStudentName = (studentId) => {
   return student ? student.username : '未知'
 }
 
-// 工具函数
-const getTypeText = (type) => {
-  const map = {
-    'AddAndSub': '加减运算',
-    'MulAndDiv': '乘除运算',
-    'Mixed': '混合运算'
-  }
-  return map[type] || type
-}
-
-const getTypeTagType = (type) => {
-  const map = {
-    'AddAndSub': 'success',
-    'MulAndDiv': 'primary',
-    'Mixed': 'warning'
-  }
-  return map[type] || 'info'
-}
-
-const getDifficultyText = (difficulty) => {
-  const map = {
-    'easy': '简单',
-    'medium': '中等',
-    'hard': '困难'
-  }
-  return map[difficulty] || difficulty
-}
-
-const getDifficultyTagType = (difficulty) => {
-  const map = {
-    'easy': 'success',
-    'medium': 'warning',
-    'hard': 'danger'
-  }
-  return map[difficulty] || 'info'
-}
+// 使用共享工具库提供的标签样式函数
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -639,6 +556,7 @@ onMounted(() => {
   loadPapers()
   loadStudents()
   loadAvailableQuestions()
+  loadQuestionTypesAndDifficulties()
 })
 </script>
 

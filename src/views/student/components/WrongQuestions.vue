@@ -49,7 +49,8 @@
           </div>
         </template>
         <div ref="chartRef" style="height: 300px; position: relative;">
-          <div v-if="wrongQuestions.length === 0" style="position: absolute; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #909399; top: 0; left: 0; z-index: 10; background: white;">
+          <div v-if="wrongQuestions.length === 0"
+            style="position: absolute; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #909399; top: 0; left: 0; z-index: 10; background: white;">
             暂无错题数据
           </div>
         </div>
@@ -123,17 +124,13 @@
               {{ getDifficultyText(currentReviewQuestion.difficulty) }}
             </el-tag>
           </div>
-          
+
           <div class="question-text" style="font-size: 16px; margin: 20px 0;">
             {{ currentReviewQuestion.content }}
           </div>
 
           <div class="answer-input">
-            <el-input-number 
-              v-model="reviewAnswer" 
-              :precision="2"
-              placeholder="请输入你的答案" 
-              style="width: 200px;"
+            <el-input-number v-model="reviewAnswer" :precision="2" placeholder="请输入你的答案" style="width: 200px;"
               :controls="false" />
           </div>
 
@@ -147,11 +144,7 @@
           </div>
 
           <div v-if="showResult" class="result-section" style="margin-top: 20px;">
-            <el-alert 
-              :title="resultMessage" 
-              :type="isAnswerCorrect ? 'success' : 'error'"
-              :closable="false"
-              show-icon>
+            <el-alert :title="resultMessage" :type="isAnswerCorrect ? 'success' : 'error'" :closable="false" show-icon>
             </el-alert>
             <div v-if="!isAnswerCorrect" style="margin-top: 10px;">
               <span style="color: #67c23a;">正确答案: {{ currentReviewQuestion.answer }}</span>
@@ -161,13 +154,8 @@
 
         <template #footer>
           <el-button @click="showReviewDialog = false">关闭</el-button>
-          <el-button 
-            v-if="reviewQuestions.length > 1"
-            @click="nextQuestion" 
-            type="primary"
-            :disabled="!showResult">
-            {{ reviewQuestionIndex < reviewQuestions.length - 1 ? '下一题' : '完成复习' }}
-          </el-button>
+          <el-button v-if="reviewQuestions.length > 1" @click="nextQuestion" type="primary" :disabled="!showResult">
+            {{ reviewQuestionIndex < reviewQuestions.length - 1 ? '下一题' : '完成复习' }} </el-button>
         </template>
       </el-dialog>
     </div>
@@ -181,6 +169,7 @@ import { Delete, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { wrongQuestionApi } from '@/api/wrongQuestion'
 import { paperApi } from '@/api/paper'
+import { getTypeTextByKey, getTypeTagTypeByKey, getDifficultyTextByKey, getDifficultyTagTypeByKey } from '@/utils/type'
 
 const props = defineProps({
   studentId: {
@@ -239,10 +228,10 @@ const loadWrongQuestions = async () => {
 
   try {
     loading.value = true
-    
+
     const response = await wrongQuestionApi.getWrongQuestions(props.studentId)
     wrongQuestions.value = response.data || []
-       
+
     // 数据更新会自动触发 watch，从而调用 forceRefreshChart()
   } catch (error) {
     ElMessage.error('加载错题列表失败: ' + (error.message || '未知错误'))
@@ -259,7 +248,7 @@ const forceRefreshChart = () => {
     console.log('没有错题数据，跳过图表初始化')
     return
   }
-  
+
   // 如果实例存在，先销毁
   if (chartInstance) {
     try {
@@ -270,7 +259,7 @@ const forceRefreshChart = () => {
       console.error('销毁图表失败:', error)
     }
   }
-  
+
   // 延迟后重新初始化（确保 DOM 已挂载并计算好尺寸）
   // 使用更长的延迟确保布局完成
   nextTick(() => {
@@ -284,12 +273,12 @@ const forceRefreshChart = () => {
 // 更新饼图
 const updateChart = () => {
   console.log('chartRef 尺寸 - height:', chartRef.value?.offsetHeight, 'width:', chartRef.value?.offsetWidth)
-  
+
   if (!chartRef.value) {
     console.warn('chartRef.value 不存在，跳过图表更新')
     return
   }
-  
+
   // 检查 DOM 是否可见 - 如果尺寸为 0，延迟重试
   if (chartRef.value.offsetHeight === 0 || chartRef.value.offsetWidth === 0) {
     setTimeout(() => {
@@ -297,7 +286,7 @@ const updateChart = () => {
     }, 200)
     return
   }
-  
+
   // 如果实例存在但 DOM 容器不同（容器被重新创建），需要重新初始化
   if (chartInstance && chartInstance.getDom() !== chartRef.value) {
     try {
@@ -309,7 +298,7 @@ const updateChart = () => {
       chartInstance = null
     }
   }
-  
+
   if (!chartInstance) {
     try {
       chartInstance = echarts.init(chartRef.value)
@@ -461,10 +450,10 @@ const generatePracticePaper = async () => {
 
     await paperApi.generatePaper(paperData)
     ElMessage.success('练习试卷生成成功！')
-    
+
     // 通知父组件
     emit('practice-generated')
-    
+
   } catch (error) {
     ElMessage.error('生成练习试卷失败: ' + error.message)
   } finally {
@@ -491,7 +480,7 @@ const checkAnswer = () => {
 
   const correctAnswer = currentReviewQuestion.value.answer
   isAnswerCorrect.value = Math.abs(reviewAnswer.value - correctAnswer) < 0.01
-  
+
   if (isAnswerCorrect.value) {
     resultMessage.value = '回答正确！太棒了！'
     // 如果回答正确，自动从错题集中移除
@@ -501,7 +490,7 @@ const checkAnswer = () => {
   } else {
     resultMessage.value = '回答错误，再想想看！'
   }
-  
+
   showResult.value = true
 }
 
@@ -532,41 +521,11 @@ const getTypeCount = (type) => {
 }
 
 // 工具函数
-const getTypeText = (type) => {
-  const map = {
-    'AddAndSub': '加减运算',
-    'MulAndDiv': '乘除运算',
-    'Mixed': '混合运算'
-  }
-  return map[type] || type
-}
-
-const getTypeTagType = (type) => {
-  const map = {
-    'AddAndSub': 'success',
-    'MulAndDiv': 'primary',
-    'Mixed': 'warning'
-  }
-  return map[type] || 'info'
-}
-
-const getDifficultyText = (difficulty) => {
-  const map = {
-    'easy': '简单',
-    'medium': '中等',
-    'hard': '困难'
-  }
-  return map[difficulty] || difficulty
-}
-
-const getDifficultyTagType = (difficulty) => {
-  const map = {
-    'easy': 'success',
-    'medium': 'warning',
-    'hard': 'danger'
-  }
-  return map[difficulty] || 'info'
-}
+// 使用 utils 提供的字符串键兼容函数
+const getTypeText = getTypeTextByKey
+const getTypeTagType = getTypeTagTypeByKey
+const getDifficultyText = getDifficultyTextByKey
+const getDifficultyTagType = getDifficultyTagTypeByKey
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -638,10 +597,10 @@ watch(
 
 onMounted(() => {
   console.log('WrongQuestions 组件已挂载, studentId:', props.studentId, '已有错题数:', wrongQuestions.value.length)
-  
+
   // 监听窗口大小变化
   window.addEventListener('resize', handleWindowResize)
-  
+
   // 如果 studentId 有效
   if (isStudentIdValid.value) {
     // 如果已经有错题数据（从缓存），立即初始化图表
@@ -697,7 +656,7 @@ onUnmounted(() => {
   console.log('WrongQuestions 组件卸载')
   // 移除 resize 事件监听
   window.removeEventListener('resize', handleWindowResize)
-  
+
   // 销毁图表实例
   if (chartInstance) {
     try {
@@ -709,7 +668,7 @@ onUnmounted(() => {
       chartInstance = null
     }
   }
-  
+
   // 清空数据，确保重新挂载时可以重新加载
   // 注意：不要清空 wrongQuestions，因为如果使用了 keep-alive 会需要它
 })

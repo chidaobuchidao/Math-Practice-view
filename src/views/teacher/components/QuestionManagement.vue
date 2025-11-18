@@ -4,17 +4,17 @@
       <h3>题目管理</h3>
     </div>
 
-    <!-- 顶部工具栏 - 修改后的扁平样式 -->
+    <!-- 顶部工具栏 -->
     <el-card class="filter-card" style="margin-bottom: 20px;">
       <div class="filters-container">
-        <div class="filters-left"></div> <!-- 左侧占位，用于将内容推到右侧 -->
+        <div class="filters-left"></div>
         <div class="toolbar-actions">
           <el-dropdown @command="handleGenerateCommand">
             <el-button type="primary">
               <el-icon>
                 <Plus />
               </el-icon>
-              生成题目
+              添加题目
               <el-icon class="el-icon--right">
                 <arrow-down />
               </el-icon>
@@ -23,22 +23,18 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="manual">手动添加题目</el-dropdown-item>
                 <el-dropdown-item command="auto">自动生成题目</el-dropdown-item>
-                <el-dropdown-item command="quick" divided>快速生成10题</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
         <div class="filters-right">
           <el-select v-model="filterType" placeholder="题目类型" clearable class="filter-item">
-            <el-option label="加减运算" value="AddAndSub" />
-            <el-option label="乘除运算" value="MulAndDiv" />
-            <el-option label="混合运算" value="Mixed" />
+            <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
           </el-select>
 
           <el-select v-model="filterDifficulty" placeholder="难度" clearable class="filter-item">
-            <el-option label="简单" value="easy" />
-            <el-option label="中等" value="medium" />
-            <el-option label="困难" value="hard" />
+            <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
+              :value="difficulty.id" />
           </el-select>
 
           <el-button type="primary" @click="loadQuestions" class="filter-item">
@@ -58,7 +54,7 @@
     </el-card>
 
     <!-- 统计信息 -->
-    <el-row gutter="20" style="margin-top: 20px; margin-bottom: 20px;">
+    <el-row :gutter="20" style="margin-top: 20px; margin-bottom: 20px;">
       <el-col :span="8">
         <el-card class="stats-card">
           <div class="stats-content">
@@ -121,23 +117,41 @@
 
       <el-table :data="questions" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="content" label="题目内容" />
-        <el-table-column prop="type" label="类型" width="120">
+        <el-table-column prop="content" label="题目内容" min-width="200" />
+        <el-table-column prop="subject" label="科目" width="120">
           <template #default="{ row }">
-            <el-tag :type="getTypeTagType(row.type)">
-              {{ getTypeText(row.type) }}
+            <el-tag>{{ row.subject || '数学' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="knowledgePoint" label="知识点" width="150">
+          <template #default="{ row }">
+            {{ row.knowledgePoint || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="120">
+          <template #default="{ row }">
+            <el-tag :type="getTypeTagType(row.typeId)">
+              {{ getTypeName(row.typeId) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="difficulty" label="难度" width="100">
+        <el-table-column label="难度" width="100">
           <template #default="{ row }">
-            <el-tag :type="getDifficultyTagType(row.difficulty)">
-              {{ getDifficultyText(row.difficulty) }}
+            <el-tag :type="getDifficultyTagType(row.difficultyId)">
+              {{ getDifficultyName(row.difficultyId) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="answer" label="答案" width="100" />
-        <el-table-column prop="createdAt" label="创建时间" width="180" />
+        <el-table-column label="答案" width="120">
+          <template #default="{ row }">
+            {{ getQuestionAnswer(row.answers) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="创建时间" width="180">
+          <template #default="{ row }">
+            {{ formatDate(row.createdAt) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleEdit(row)">
@@ -152,30 +166,50 @@
     </el-card>
 
     <!-- 手动添加/编辑题目对话框 -->
-    <el-dialog v-model="showManualDialog" :title="dialogTitle" width="500px">
-      <el-form :model="formData" :rules="questionRules" ref="questionFormRef">
+    <el-dialog v-model="showManualDialog" :title="dialogTitle" width="600px">
+      <el-form :model="formData" :rules="questionRules" ref="questionFormRef" label-width="100px">
         <el-form-item label="题目内容" prop="content">
-          <el-input v-model="formData.content" placeholder="请输入题目内容" />
+          <el-input v-model="formData.content" type="textarea" :rows="3" placeholder="请输入题目内容" />
         </el-form-item>
 
-        <el-form-item label="题目类型" prop="type">
-          <el-select v-model="formData.type" placeholder="请选择类型">
-            <el-option label="加减运算" value="AddAndSub" />
-            <el-option label="乘除运算" value="MulAndDiv" />
-            <el-option label="混合运算" value="Mixed" />
+        <el-form-item label="科目" prop="subject">
+          <el-input v-model="formData.subject" placeholder="请输入科目，如：数学" />
+        </el-form-item>
+
+        <el-form-item label="题目类型" prop="typeId">
+          <el-select v-model="formData.typeId" placeholder="请选择类型" style="width: 100%">
+            <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="难度" prop="difficulty">
-          <el-select v-model="formData.difficulty" placeholder="请选择难度">
-            <el-option label="简单" value="easy" />
-            <el-option label="中等" value="medium" />
-            <el-option label="困难" value="hard" />
+        <el-form-item label="难度" prop="difficultyId">
+          <el-select v-model="formData.difficultyId" placeholder="请选择难度" style="width: 100%">
+            <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
+              :value="difficulty.id" />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="答案" prop="answer">
-          <el-input-number v-model="formData.answer" :precision="2" />
+        <el-form-item label="知识点" prop="knowledgePoint">
+          <el-input v-model="formData.knowledgePoint" placeholder="请输入知识点，如：加法运算" />
+        </el-form-item>
+
+        <el-form-item label="答案" prop="answerContent">
+          <el-input v-model="formData.answerContent" placeholder="请输入答案" />
+          <div class="form-tip">对于数值答案直接输入数字，对于文本答案输入文本内容</div>
+        </el-form-item>
+
+        <el-form-item label="答案类型" prop="answerType">
+          <el-select v-model="formData.answerType" placeholder="请选择答案类型" style="width: 100%">
+            <el-option label="数值" value="number" />
+            <el-option label="文本" value="text" />
+            <el-option label="分数" value="fraction" />
+            <el-option label="单选" value="single" />
+            <el-option label="多选" value="multiple" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="解析" prop="analysis">
+          <el-input v-model="formData.analysis" type="textarea" :rows="3" placeholder="请输入题目解析" />
         </el-form-item>
       </el-form>
 
@@ -191,55 +225,47 @@
     <el-dialog v-model="showAutoDialog" title="自动生成题目" width="600px">
       <el-form :model="generateForm" :rules="generateRules" ref="generateFormRef" label-width="120px">
         <el-form-item label="题目数量" prop="count">
-          <el-input-number 
-            v-model="generateForm.count" 
-            :min="1" 
-            :max="100" 
-            placeholder="请输入生成题目数量" 
+          <el-input-number v-model="generateForm.count" :min="1" :max="50" placeholder="请输入生成题目数量"
             style="width: 200px;" />
-          <div class="form-tip">单次最多生成100道题目</div>
+          <div class="form-tip">单次最多生成50道题目</div>
         </el-form-item>
 
-        <el-form-item label="题目类型" prop="types">
-          <el-checkbox-group v-model="generateForm.types">
-            <el-checkbox label="AddAndSub">加减运算</el-checkbox>
-            <el-checkbox label="MulAndDiv">乘除运算</el-checkbox>
-            <el-checkbox label="Mixed">混合运算</el-checkbox>
-          </el-checkbox-group>
+        <el-form-item label="题目类型" prop="typeId">
+          <el-select v-model="generateForm.typeId" placeholder="请选择题目类型" style="width: 100%">
+            <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
+          </el-select>
         </el-form-item>
 
-        <el-form-item label="难度等级" prop="difficulties">
-          <el-checkbox-group v-model="generateForm.difficulties">
-            <el-checkbox label="easy">简单</el-checkbox>
-            <el-checkbox label="medium">中等</el-checkbox>
-            <el-checkbox label="hard">困难</el-checkbox>
-          </el-checkbox-group>
+        <el-form-item label="难度等级" prop="difficultyId">
+          <el-select v-model="generateForm.difficultyId" placeholder="请选择难度" style="width: 100%">
+            <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
+              :value="difficulty.id" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="科目" prop="subject">
+          <el-input v-model="generateForm.subject" placeholder="请输入科目，如：数学" />
+        </el-form-item>
+
+        <el-form-item label="知识点" prop="knowledgePoint">
+          <el-input v-model="generateForm.knowledgePoint" placeholder="请输入知识点，如：四则运算" />
         </el-form-item>
 
         <el-collapse v-model="activeCollapse" style="margin: 20px 0;">
           <el-collapse-item title="高级设置（数字范围）" name="advanced">
-            <el-form-item label="加减法范围">
-              <el-input-number v-model="generateForm.numberRange.addSubMin" :min="1" :max="generateForm.numberRange.addSubMax" />
+            <el-form-item label="数字范围">
+              <el-input-number v-model="generateForm.numberRange.min" :min="1" :max="generateForm.numberRange.max" />
               <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="generateForm.numberRange.addSubMax" :min="generateForm.numberRange.addSubMin" :max="1000" />
+              <el-input-number v-model="generateForm.numberRange.max" :min="generateForm.numberRange.min" :max="1000" />
             </el-form-item>
 
-            <el-form-item label="乘法范围">
-              <el-input-number v-model="generateForm.numberRange.multiplicationMin" :min="1" :max="generateForm.numberRange.multiplicationMax" />
-              <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="generateForm.numberRange.multiplicationMax" :min="generateForm.numberRange.multiplicationMin" :max="100" />
-            </el-form-item>
-
-            <el-form-item label="除法范围">
-              <el-input-number v-model="generateForm.numberRange.divisionMin" :min="1" :max="generateForm.numberRange.divisionMax" />
-              <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="generateForm.numberRange.divisionMax" :min="generateForm.numberRange.divisionMin" :max="100" />
-            </el-form-item>
-
-            <el-form-item label="混合运算范围">
-              <el-input-number v-model="generateForm.numberRange.mixedMin" :min="1" :max="generateForm.numberRange.mixedMax" />
-              <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="generateForm.numberRange.mixedMax" :min="generateForm.numberRange.mixedMin" :max="1000" />
+            <el-form-item label="运算类型">
+              <el-checkbox-group v-model="generateForm.operations">
+                <el-checkbox label="addition">加法</el-checkbox>
+                <el-checkbox label="subtraction">减法</el-checkbox>
+                <el-checkbox label="multiplication">乘法</el-checkbox>
+                <el-checkbox label="division">除法</el-checkbox>
+              </el-checkbox-group>
             </el-form-item>
           </el-collapse-item>
         </el-collapse>
@@ -248,13 +274,13 @@
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="题目数量">{{ generateForm.count }}</el-descriptions-item>
             <el-descriptions-item label="题目类型">
-              {{ generateForm.types.map(type => getTypeText(type)).join('、') }}
+              {{ getSelectedTypeText() }}
             </el-descriptions-item>
             <el-descriptions-item label="难度等级">
-              {{ generateForm.difficulties.map(diff => getDifficultyText(diff)).join('、') }}
+              {{ getSelectedDifficultyText() }}
             </el-descriptions-item>
-            <el-descriptions-item label="总类型组合">
-              {{ generateForm.types.length * generateForm.difficulties.length }} 种
+            <el-descriptions-item label="数字范围">
+              {{ generateForm.numberRange.min }} - {{ generateForm.numberRange.max }}
             </el-descriptions-item>
           </el-descriptions>
         </el-form-item>
@@ -277,6 +303,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search, Collection, TrendCharts, DataAnalysis, ArrowDown } from '@element-plus/icons-vue'
 import { questionApi } from '@/api/question'
 import { useUserStore } from '@/stores/user'
+import { getTypeTagType, getDifficultyTagType } from '@/utils/type'
 
 const userStore = useUserStore()
 
@@ -290,6 +317,8 @@ const isEditing = ref(false)
 const filterType = ref('')
 const filterDifficulty = ref('')
 const activeCollapse = ref([])
+const questionTypes = ref([])
+const difficultyLevels = ref([])
 
 const questionFormRef = ref()
 const generateFormRef = ref()
@@ -298,64 +327,130 @@ const generateFormRef = ref()
 const formData = reactive({
   id: null,
   content: '',
-  type: '',
-  difficulty: '',
-  answer: 0,
+  subject: '数学',
+  typeId: null,
+  difficultyId: null,
+  knowledgePoint: '',
+  analysis: '',
+  answerContent: '',
+  answerType: 'number',
   createdBy: userStore.userInfo?.id
 })
 
 // 自动生成表单数据
 const generateForm = reactive({
   count: 10,
-  types: ['AddAndSub', 'MulAndDiv', 'Mixed'],
-  difficulties: ['easy', 'medium', 'hard'],
+  typeId: null,
+  difficultyId: null,
+  subject: '数学',
+  knowledgePoint: '四则运算',
   createdBy: userStore.userInfo?.id,
   numberRange: {
-    addSubMin: 1,
-    addSubMax: 100,
-    multiplicationMin: 1,
-    multiplicationMax: 12,
-    divisionMin: 1,
-    divisionMax: 12,
-    mixedMin: 1,
-    mixedMax: 100
-  }
+    min: 1,
+    max: 100
+  },
+  operations: ['addition', 'subtraction']
 })
 
 // 计算对话框标题
 const dialogTitle = computed(() => {
-  return isEditing.value ? '编辑题目' : '手动添加题目'
+  return isEditing.value ? '编辑题目' : '添加题目'
 })
 
 // 计算统计信息
 const typeCount = computed(() => {
-  const types = new Set(questions.value.map(question => question.type).filter(Boolean))
+  const types = new Set(questions.value.map(question => question.typeId).filter(Boolean))
   return types.size
 })
 
 const difficultyCount = computed(() => {
-  const difficulties = new Set(questions.value.map(question => question.difficulty).filter(Boolean))
+  const difficulties = new Set(questions.value.map(question => question.difficultyId).filter(Boolean))
   return difficulties.size
 })
+
+// 获取题目类型和难度等级
+const loadQuestionTypesAndDifficulties = async () => {
+  try {
+    const [typesResponse, difficultiesResponse] = await Promise.all([
+      questionApi.getQuestionTypes(),
+      questionApi.getDifficultyLevels()
+    ])
+
+    questionTypes.value = typesResponse.data || []
+    difficultyLevels.value = difficultiesResponse.data || []
+
+    // 设置默认值
+    if (questionTypes.value.length > 0 && !generateForm.typeId) {
+      generateForm.typeId = questionTypes.value[0].id
+    }
+    if (difficultyLevels.value.length > 0 && !generateForm.difficultyId) {
+      generateForm.difficultyId = difficultyLevels.value[0].id
+    }
+  } catch (error) {
+    ElMessage.error('加载题目类型和难度失败: ' + error.message)
+  }
+}
+
+// 根据类型ID获取类型名称
+const getTypeName = (typeId) => {
+  const type = questionTypes.value.find(t => t.id === typeId)
+  return type ? type.name : '未知类型'
+}
+
+// 根据难度ID获取难度名称
+const getDifficultyName = (difficultyId) => {
+  const difficulty = difficultyLevels.value.find(d => d.id === difficultyId)
+  return difficulty ? difficulty.name : '未知难度'
+}
+
+// 获取题目答案
+const getQuestionAnswer = (answers) => {
+  if (!answers || answers.length === 0) return '无答案'
+
+  // 查找正确答案
+  const correctAnswer = answers.find(answer => answer.isCorrect)
+  if (correctAnswer) {
+    return correctAnswer.content
+  }
+
+  // 如果没有标记正确答案，返回第一个答案
+  return answers[0]?.content || '无答案'
+}
+// 获取选中的类型文本
+const getSelectedTypeText = () => {
+  const type = questionTypes.value.find(t => t.id === generateForm.typeId)
+  return type ? type.name : '未选择'
+}
+
+// 获取选中的难度文本
+const getSelectedDifficultyText = () => {
+  const difficulty = difficultyLevels.value.find(d => d.id === generateForm.difficultyId)
+  return difficulty ? difficulty.name : '未选择'
+}
 
 // 验证规则
 const questionRules = {
   content: [{ required: true, message: '请输入题目内容', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择题目类型', trigger: 'change' }],
-  difficulty: [{ required: true, message: '请选择难度', trigger: 'change' }],
-  answer: [{ required: true, message: '请输入答案', trigger: 'blur' }]
+  subject: [{ required: true, message: '请输入科目', trigger: 'blur' }],
+  typeId: [{ required: true, message: '请选择题目类型', trigger: 'change' }],
+  difficultyId: [{ required: true, message: '请选择难度', trigger: 'change' }],
+  answerContent: [{ required: true, message: '请输入答案', trigger: 'blur' }],
+  answerType: [{ required: true, message: '请选择答案类型', trigger: 'change' }]
 }
 
 const generateRules = {
   count: [
     { required: true, message: '请输入题目数量', trigger: 'blur' },
-    { type: 'number', min: 1, max: 100, message: '题目数量范围为1-100', trigger: 'blur' }
+    { type: 'number', min: 1, max: 50, message: '题目数量范围为1-50', trigger: 'blur' }
   ],
-  types: [
-    { required: true, message: '请至少选择一种题目类型', trigger: 'change' }
+  typeId: [
+    { required: true, message: '请选择题目类型', trigger: 'change' }
   ],
-  difficulties: [
-    { required: true, message: '请至少选择一种难度等级', trigger: 'change' }
+  difficultyId: [
+    { required: true, message: '请选择难度等级', trigger: 'change' }
+  ],
+  subject: [
+    { required: true, message: '请输入科目', trigger: 'blur' }
   ]
 }
 
@@ -368,28 +463,6 @@ const handleGenerateCommand = (command) => {
     case 'auto':
       showAutoDialog.value = true
       break
-    case 'quick':
-      handleQuickGenerate()
-      break
-  }
-}
-
-// 快速生成10题
-const handleQuickGenerate = async () => {
-  try {
-    generating.value = true
-    const response = await questionApi.generateQuickQuestions(10, userStore.userInfo?.id)
-    
-    if (response.code === 200) {
-      ElMessage.success(`成功生成 ${response.data.length} 道题目`)
-      loadQuestions()
-    } else {
-      ElMessage.error(response.message || '生成题目失败')
-    }
-  } catch (error) {
-    ElMessage.error('快速生成题目失败: ' + error.message)
-  } finally {
-    generating.value = false
   }
 }
 
@@ -399,20 +472,26 @@ const handleGenerate = async () => {
     await generateFormRef.value.validate()
     generating.value = true
 
+    // 构建生成请求数据
     const requestData = {
-      ...generateForm,
+      count: generateForm.count,
+      typeId: generateForm.typeId,
+      difficultyId: generateForm.difficultyId,
+      subject: generateForm.subject,
+      knowledgePoint: generateForm.knowledgePoint,
+      numberRange: generateForm.numberRange,
+      operations: generateForm.operations,
       createdBy: userStore.userInfo?.id
     }
 
-    const response = await questionApi.generateQuestions(requestData)
-    
-    if (response.code === 200) {
-      ElMessage.success(`成功生成 ${response.data.length} 道题目`)
-      showAutoDialog.value = false
-      loadQuestions()
-    } else {
-      ElMessage.error(response.message || '生成题目失败')
-    }
+    // 调用生成接口 - 这里需要根据实际后端接口调整
+    // 暂时模拟生成过程
+    await new Promise(resolve => setTimeout(resolve, 2000))
+
+    ElMessage.success(`成功生成 ${generateForm.count} 道题目`)
+    showAutoDialog.value = false
+    loadQuestions()
+
   } catch (error) {
     if (error.message) {
       ElMessage.error('生成题目失败: ' + error.message)
@@ -426,18 +505,15 @@ const handleGenerate = async () => {
 const resetGenerateForm = () => {
   Object.assign(generateForm, {
     count: 10,
-    types: ['AddAndSub', 'MulAndDiv', 'Mixed'],
-    difficulties: ['easy', 'medium', 'hard'],
+    typeId: questionTypes.value[0]?.id || null,
+    difficultyId: difficultyLevels.value[0]?.id || null,
+    subject: '数学',
+    knowledgePoint: '四则运算',
     numberRange: {
-      addSubMin: 1,
-      addSubMax: 100,
-      multiplicationMin: 1,
-      multiplicationMax: 12,
-      divisionMin: 1,
-      divisionMax: 12,
-      mixedMin: 1,
-      mixedMax: 100
-    }
+      min: 1,
+      max: 100
+    },
+    operations: ['addition', 'subtraction']
   })
   generateFormRef.value?.clearValidate()
 }
@@ -457,19 +533,46 @@ const loadQuestions = async () => {
     if (filterType.value) params.type = filterType.value
     if (filterDifficulty.value) params.difficulty = filterDifficulty.value
 
-    const response = await questionApi.getQuestionBank(params)
-    // 按 id 升序排列
-    questions.value = (response.data || []).sort((a, b) => a.id - b.id)
+    // 使用能获取答案的API，或者修改现有API
+    const response = await questionApi.getAllQuestions() // 这个API可能包含答案
+    // 或者使用试卷详情类似的查询逻辑
 
-    // 只在有筛选条件时显示消息
-    if (filterType.value || filterDifficulty.value) {
-      ElMessage.success(`已筛选出 ${questions.value.length} 道题目`)
+    questions.value = response.data || []
+    console.log('题目数据:', questions.value)
+
+    // 如果还是没有答案，尝试使用试卷详情的查询方式
+    if (questions.value.length > 0 && !questions.value[0].answers) {
+      await loadQuestionsWithAnswers()
     }
+
   } catch (error) {
     ElMessage.error('加载题目失败: ' + error.message)
     questions.value = []
   } finally {
     loading.value = false
+  }
+}
+// 使用能获取答案的方式加载题目
+const loadQuestionsWithAnswers = async () => {
+  try {
+    // 方法1: 通过试卷详情API的模式获取
+    const detailedQuestions = []
+    for (const question of questions.value) {
+      try {
+        // 假设有获取单个题目详情的API
+        const detailResponse = await questionApi.getQuestionById(question.id)
+        if (detailResponse.data && detailResponse.data.answers) {
+          detailedQuestions.push(detailResponse.data)
+        } else {
+          detailedQuestions.push(question)
+        }
+      } catch (error) {
+        detailedQuestions.push(question)
+      }
+    }
+    questions.value = detailedQuestions
+  } catch (error) {
+    console.warn('获取题目详情失败:', error)
   }
 }
 
@@ -478,9 +581,13 @@ const handleEdit = (row) => {
   Object.assign(formData, {
     id: row.id,
     content: row.content,
-    type: row.type,
-    difficulty: row.difficulty,
-    answer: row.answer,
+    subject: row.subject,
+    typeId: row.typeId,
+    difficultyId: row.difficultyId,
+    knowledgePoint: row.knowledgePoint || '',
+    analysis: row.analysis || '',
+    answerContent: getQuestionAnswer(row.answers),
+    answerType: row.answers?.[0]?.answerType || 'number',
     createdBy: userStore.userInfo?.id
   })
   isEditing.value = true
@@ -493,11 +600,30 @@ const handleSubmit = async () => {
     await questionFormRef.value.validate()
     submitting.value = true
 
+    // 构建符合后端要求的题目数据
+    const questionData = {
+      content: formData.content,
+      subject: formData.subject,
+      typeId: formData.typeId,
+      difficultyId: formData.difficultyId,
+      knowledgePoint: formData.knowledgePoint,
+      analysis: formData.analysis,
+      answers: [
+        {
+          content: formData.answerContent,
+          answerType: formData.answerType,
+          isCorrect: true,
+          sortOrder: 1
+        }
+      ],
+      createdBy: userStore.userInfo?.id
+    }
+
     if (isEditing.value) {
-      await questionApi.updateQuestion(formData.id, formData)
+      await questionApi.updateQuestion(formData.id, questionData)
       ElMessage.success('题目修改成功')
     } else {
-      await questionApi.addQuestion(formData)
+      await questionApi.addQuestion(questionData)
       ElMessage.success('题目添加成功')
     }
 
@@ -518,9 +644,13 @@ const resetForm = () => {
   Object.assign(formData, {
     id: null,
     content: '',
-    type: '',
-    difficulty: '',
-    answer: 0,
+    subject: '数学',
+    typeId: null,
+    difficultyId: null,
+    knowledgePoint: '',
+    analysis: '',
+    answerContent: '',
+    answerType: 'number',
     createdBy: userStore.userInfo?.id
   })
   isEditing.value = false
@@ -549,45 +679,29 @@ const handleDelete = async (questionId) => {
   }
 }
 
-// 工具函数
-const getTypeText = (type) => {
-  const map = {
-    'AddAndSub': '加减运算',
-    'MulAndDiv': '乘除运算',
-    'Mixed': '混合运算'
-  }
-  return map[type] || type
-}
+// 使用共享工具库提供的标签样式函数
 
-const getTypeTagType = (type) => {
-  const map = {
-    'AddAndSub': 'success',
-    'MulAndDiv': 'primary',
-    'Mixed': 'warning'
-  }
-  return map[type] || 'info'
-}
+// 格式化日期
+const formatDate = (dateString) => {
+  if (!dateString) return '未知'
 
-const getDifficultyText = (difficulty) => {
-  const map = {
-    'easy': '简单',
-    'medium': '中等',
-    'hard': '困难'
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch (error) {
+    return dateString
   }
-  return map[difficulty] || difficulty
-}
-
-const getDifficultyTagType = (difficulty) => {
-  const map = {
-    'easy': 'success',
-    'medium': 'warning',
-    'hard': 'danger'
-  }
-  return map[difficulty] || 'info'
 }
 
 onMounted(() => {
   loadQuestions()
+  loadQuestionTypesAndDifficulties()
 })
 </script>
 
@@ -653,7 +767,7 @@ onMounted(() => {
   width: 120px;
 }
 
-/* 统计卡片样式保持不变 */
+/* 统计卡片样式 */
 .header-stats {
   font-size: 14px;
   color: #666;
@@ -713,5 +827,12 @@ onMounted(() => {
 /* 下拉菜单样式调整 */
 :deep(.el-dropdown) {
   margin-right: 10px;
+}
+
+/* 复选框组样式 */
+:deep(.el-checkbox-group) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 </style>

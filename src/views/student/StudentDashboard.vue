@@ -1,3 +1,330 @@
+<script setup>
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+    CircleClose,
+    Document,
+    CircleCheck,
+    Clock,
+    Star,
+    Refresh,
+    Warning,
+    TrendCharts,
+    EditPen
+} from '@element-plus/icons-vue'
+import { paperApi } from '@/api/paper'
+import { wrongQuestionApi } from '@/api/wrongQuestion'
+import { useUserStore } from '@/stores/user'
+import WrongQuestions from './components/WrongQuestions.vue'
+import { getTypeName, getDifficultyName, getTypeTagType, getDifficultyTagType } from '@/utils/type'
+
+const router = useRouter()
+const userStore = useUserStore()
+const userInfo = ref({})
+const papers = ref([])
+const loading = ref(false)
+const showPaperDialog = ref(false)
+const submitting = ref(false)
+const currentPaper = ref(null)
+const currentPaperDetail = ref(null)
+const studentAnswers = ref({})
+const examTime = ref(0)
+const activeTab = ref('papers')
+let timer = null
+
+// 错题统计
+const wrongQuestionStats = ref({
+    total: 0,
+    weakType: '',
+    practiceCount: 0
+})
+
+// 统计
+const paperStats = computed(() => {
+    const total = papers.value.length
+    const completed = papers.value.filter(p => p.score !== null && p.score !== undefined).length
+    const pending = total - completed
+    const completedPapers = papers.value.filter(p => p.score !== null && p.score !== undefined)
+    const avgScore = completedPapers.length > 0
+        ? (completedPapers.reduce((sum, p) => sum + p.score, 0) / completedPapers.length).toFixed(1)
+        : 0
+
+    return { total, completed, pending, avgScore }
+})
+
+const answeredCount = computed(() => {
+    return Object.values(studentAnswers.value).filter(answer =>
+        answer !== null && answer !== undefined && answer !== ''
+    ).length
+})
+
+const formatExamTime = computed(() => {
+    const minutes = Math.floor(examTime.value / 60)
+    const seconds = examTime.value % 60
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+})
+
+// 加载学生试卷
+const loadPapers = async () => {
+    try {
+        loading.value = true
+        const response = await paperApi.getStudentPapers(userInfo.value.id)
+        papers.value = response.data || []
+    } catch (error) {
+        ElMessage.error('加载试卷失败: ' + error.message)
+        papers.value = []
+    } finally {
+        loading.value = false
+    }
+}
+
+// 加载错题统计
+const loadWrongQuestionStats = async () => {
+    try {
+        const response = await wrongQuestionApi.getWrongQuestions(userInfo.value.id)
+        const wrongQuestions = response.data || []
+
+        wrongQuestionStats.value.total = wrongQuestions.length
+
+        // 找出最薄弱的题型
+        const typeCount = {}
+        wrongQuestions.forEach(q => {
+            typeCount[q.type] = (typeCount[q.type] || 0) + 1
+        })
+
+        let maxCount = 0
+        let weakType = ''
+        Object.keys(typeCount).forEach(type => {
+            if (typeCount[type] > maxCount) {
+                maxCount = typeCount[type]
+                weakType = getTypeText(type)
+            }
+        })
+
+        wrongQuestionStats.value.weakType = weakType
+        wrongQuestionStats.value.practiceCount = Math.min(wrongQuestions.length, 10)
+
+    } catch (error) {
+        console.error('加载错题统计失败:', error)
+    }
+}
+
+// 从错题集生成练习试卷
+const generatePracticeFromWrongQuestions = async () => {
+    try {
+        const response = await wrongQuestionApi.getWrongQuestions(userInfo.value.id)
+        const wrongQuestions = response.data || []
+
+        if (wrongQuestions.length === 0) {
+            ElMessage.warning('错题集为空，无法生成练习试卷')
+            return
+        }
+
+        const questionIds = wrongQuestions.map(q => q.question_id).slice(0, 10)
+        const paperData = {
+            title: `错题专项练习 - ${formatDate(new Date())}`,
+            studentId: userInfo.value.id,
+            questionIds: questionIds
+        }
+
+        const paperResponse = await paperApi.generatePaper(paperData)
+        ElMessage.success('练习试卷生成成功！')
+
+        await loadPapers()
+
+        ElMessageBox.confirm('练习试卷已生成，是否立即开始答题？', '提示', {
+            confirmButtonText: '开始答题',
+            cancelButtonText: '稍后再说',
+            type: 'success'
+        }).then(() => {
+            const newPaper = papers.value.find(p => p.id === paperResponse.data.id)
+            if (newPaper) {
+                startPaper(newPaper)
+            }
+        })
+
+    } catch (error) {
+        ElMessage.error('生成练习试卷失败: ' + error.message)
+    }
+}
+
+// 处理练习试卷生成事件
+const handlePracticeGenerated = () => {
+    loadPapers()
+    activeTab.value = 'papers'
+}
+
+// 开始答题
+const startPaper = async (paper) => {
+    try {
+        if (paper.score !== null && paper.score !== undefined) {
+            ElMessage.warning('该试卷已完成，无法再次答题')
+            return
+        }
+
+        const response = await paperApi.getPaperDetail(paper.id)
+        currentPaperDetail.value = response.data
+        currentPaper.value = paper
+
+        studentAnswers.value = {}
+
+        // 初始化学生答案
+        if (currentPaperDetail.value.questions) {
+            currentPaperDetail.value.questions.forEach(question => {
+                // 如果已经有学生答案，使用已有的
+                if (question.studentAnswer !== null && question.studentAnswer !== undefined) {
+                    studentAnswers.value[question.id] = question.studentAnswer
+                } else {
+                    studentAnswers.value[question.id] = null
+                }
+            })
+        }
+
+        examTime.value = 0
+        timer = setInterval(() => {
+            examTime.value++
+        }, 1000)
+
+        showPaperDialog.value = true
+    } catch (error) {
+        ElMessage.error('加载试卷详情失败: ' + error.message)
+    }
+}
+
+// 答案变化处理
+const handleAnswerChange = (questionId) => {
+    console.log(`题目 ${questionId} 答案更新为:`, studentAnswers.value[questionId])
+}
+
+// 提交试卷
+const submitPaper = async () => {
+    try {
+        if (answeredCount.value < currentPaper.value.totalQuestions) {
+            ElMessage.warning(`请完成所有题目后再提交！还有 ${currentPaper.value.totalQuestions - answeredCount.value} 题未作答`)
+            return
+        }
+
+        submitting.value = true
+
+        const submitData = {
+            answers: studentAnswers.value,
+            timeSpent: examTime.value
+        }
+
+        console.log('提交试卷数据:', submitData)
+
+        const response = await paperApi.submitPaper(currentPaper.value.id, submitData)
+
+        ElMessage.success(`试卷提交成功！得分: ${response.data.score}分`)
+        showPaperDialog.value = false
+
+        if (timer) {
+            clearInterval(timer)
+            timer = null
+        }
+
+        await loadPapers()
+        await loadWrongQuestionStats()
+    } catch (error) {
+        console.error('提交试卷错误:', error)
+        ElMessage.error('提交试卷失败: ' + (error.message || '网络错误'))
+    } finally {
+        submitting.value = false
+    }
+}
+
+// 查看试卷详情
+const viewPaperDetail = async (paper) => {
+    try {
+        const response = await paperApi.getPaperDetail(paper.id)
+        currentPaperDetail.value = response.data
+        currentPaper.value = paper
+        showPaperDialog.value = true
+    } catch (error) {
+        ElMessage.error('加载试卷详情失败: ' + error.message)
+    }
+}
+
+// 获取题目正确答案
+const getQuestionAnswer = (answers) => {
+    if (!answers || answers.length === 0) return '无答案'
+
+    // 查找正确答案（isCorrect为true的答案）
+    const correctAnswer = answers.find(answer => answer.isCorrect)
+    if (correctAnswer) {
+        return correctAnswer.content
+    }
+
+    // 如果没有标记正确答案，返回第一个答案
+    return answers[0]?.content || '无答案'
+}
+// 工具函数
+const getStatusType = (paper) => {
+    if (paper.score !== null && paper.score !== undefined) return 'success'
+    return 'warning'
+}
+
+const getStatusText = (paper) => {
+    if (paper.score !== null && paper.score !== undefined) return '已完成'
+    return '待完成'
+}
+
+const formatTime = (seconds) => {
+    if (!seconds) return '0秒'
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    if (minutes > 0) {
+        return `${minutes}分${remainingSeconds}秒`
+    }
+    return `${remainingSeconds}秒`
+}
+
+const formatDate = (dateString) => {
+    if (!dateString) return '未知'
+    try {
+        const date = new Date(dateString)
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    } catch (error) {
+        return dateString
+    }
+}
+
+// 使用工具函数库提供的类型/难度映射和标签样式
+
+const handleLogout = async () => {
+    try {
+        await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+        })
+
+        userStore.clearUserInfo()
+        ElMessage.success('已退出登录')
+        router.push('/login?_=' + Date.now())
+    } catch {
+        // 用户取消退出
+    }
+}
+
+onMounted(() => {
+    if (!userStore.isLoggedIn) {
+        router.push('/login')
+        return
+    }
+    userInfo.value = userStore.userInfo
+    loadPapers()
+    loadWrongQuestionStats()
+})
+</script>
+
 <template>
     <div class="student-dashboard">
         <el-container>
@@ -114,7 +441,8 @@
                     </el-col>
 
                     <el-col :span="8">
-                        <el-card class="stats-card" @click="generatePracticeFromWrongQuestions" style="cursor: pointer;">
+                        <el-card class="stats-card" @click="generatePracticeFromWrongQuestions"
+                            style="cursor: pointer;">
                             <div class="stats-content">
                                 <div class="stats-icon" style="background-color: #f0f9eb;">
                                     <el-icon>
@@ -177,11 +505,15 @@
                                         </el-tag>
                                     </template>
                                 </el-table-column>
-                                <el-table-column label="操作" width="120">
+                                <el-table-column label="操作" width="200">
                                     <template #default="{ row }">
                                         <el-button type="primary" size="small" @click="startPaper(row)"
                                             :disabled="row.score !== null && row.score !== undefined">
                                             {{ (row.score !== null && row.score !== undefined) ? '已完成' : '开始答题' }}
+                                        </el-button>
+                                        <el-button type="info" size="small" @click="viewPaperDetail(row)"
+                                            :disabled="row.score === null || row.score === undefined">
+                                            查看详情
                                         </el-button>
                                     </template>
                                 </el-table-column>
@@ -191,9 +523,7 @@
 
                     <!-- 错题集 -->
                     <el-tab-pane label="我的错题集" name="wrong-questions">
-                        <WrongQuestions 
-                            :student-id="userInfo.id"
-                            @practice-generated="handlePracticeGenerated" />
+                        <WrongQuestions :student-id="userInfo.id" @practice-generated="handlePracticeGenerated" />
                     </el-tab-pane>
                 </el-tabs>
 
@@ -216,18 +546,23 @@
         </el-container>
 
         <!-- 答题对话框 -->
-        <el-dialog v-model="showPaperDialog" :title="`正在答题 - ${currentPaper?.title}`" width="800px" fullscreen>
+        <el-dialog v-model="showPaperDialog"
+            :title="`${currentPaper?.score ? '试卷详情' : '正在答题'} - ${currentPaper?.title}`" width="800px" fullscreen>
             <div v-if="currentPaperDetail" class="paper-exam">
                 <div class="exam-header">
                     <div class="exam-info">
                         <h3>{{ currentPaper.title }}</h3>
                         <div class="exam-stats">
                             <span>题目数量: {{ currentPaper.totalQuestions }}</span>
-                            <span>已答: {{ answeredCount }}/{{ currentPaper.totalQuestions }}</span>
-                            <span>用时: {{ formatTime(examTime) }}</span>
+                            <span v-if="currentPaper.score">得分: {{ currentPaper.score }} 分</span>
+                            <span v-if="currentPaper.score">正确题数: {{ currentPaper.correctCount }}/{{
+                                currentPaper.totalQuestions
+                            }}</span>
+                            <span v-else>已答: {{ answeredCount }}/{{ currentPaper.totalQuestions }}</span>
+                            <span>用时: {{ formatTime(currentPaper.score ? currentPaper.timeSpent : examTime) }}</span>
                         </div>
                     </div>
-                    <div class="timer" :class="{ 'warning': examTime > 1800 }">
+                    <div v-if="!currentPaper.score" class="timer" :class="{ 'warning': examTime > 1800 }">
                         <el-icon>
                             <Clock />
                         </el-icon>
@@ -240,12 +575,17 @@
                         class="question-item">
                         <div class="question-header">
                             <span class="question-number">第 {{ index + 1 }} 题</span>
-                            <el-tag size="small" :type="getDifficultyTagType(question.difficulty)">
-                                {{ getDifficultyText(question.difficulty) }}
+                            <el-tag size="small" :type="getDifficultyTagType(question.difficultyId)">
+                                {{ getDifficultyName(question.difficultyId) }}
                             </el-tag>
-                            <el-tag size="small" :type="getTypeTagType(question.type)">
-                                {{ getTypeText(question.type) }}
+                            <el-tag size="small" :type="getTypeTagType(question.typeId)">
+                                {{ getTypeName(question.typeId) }}
                             </el-tag>
+                            <span v-if="currentPaper.score" class="answer-status">
+                                <el-tag :type="question.isCorrect ? 'success' : 'danger'" size="small">
+                                    {{ question.isCorrect ? '正确' : '错误' }}
+                                </el-tag>
+                            </span>
                         </div>
 
                         <div class="question-content">
@@ -254,15 +594,26 @@
                             <div class="answer-input">
                                 <el-input-number v-model="studentAnswers[question.id]" :precision="2"
                                     placeholder="请输入答案" style="width: 200px;"
+                                    :disabled="currentPaper.score !== null && currentPaper.score !== undefined"
                                     @change="handleAnswerChange(question.id)" />
+                            </div>
+
+                            <!-- 显示正确答案（如果试卷已完成） -->
+                            <div v-if="currentPaper.score" class="correct-answer-section">
+                                <p><strong>正确答案:</strong> {{ getQuestionAnswer(question.answers) }}</p>
+                                <p><strong>你的答案:</strong>
+                                    <span :class="question.isCorrect ? 'correct-text' : 'wrong-text'">
+                                        {{ studentAnswers[question.id] || '未作答' }}
+                                    </span>
+                                </p>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="exam-footer">
-                    <el-button @click="showPaperDialog = false">取消</el-button>
-                    <el-button type="primary" @click="submitPaper" :loading="submitting"
+                    <el-button @click="showPaperDialog = false">关闭</el-button>
+                    <el-button v-if="!currentPaper.score" type="primary" @click="submitPaper" :loading="submitting"
                         :disabled="answeredCount < currentPaper.totalQuestions">
                         提交试卷 ({{ answeredCount }}/{{ currentPaper.totalQuestions }})
                     </el-button>
@@ -271,344 +622,6 @@
         </el-dialog>
     </div>
 </template>
-
-<script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessageBox, ElMessage } from 'element-plus'
-import {
-    CircleClose,
-    Document,
-    CircleCheck,
-    Clock,
-    Star,
-    Refresh,
-    Warning,
-    TrendCharts,
-    EditPen
-} from '@element-plus/icons-vue'
-import { paperApi } from '@/api/paper'
-import { wrongQuestionApi } from '@/api/wrongQuestion'
-import { useUserStore } from '@/stores/user'
-import WrongQuestions from './components/WrongQuestions.vue'
-
-const router = useRouter()
-const userStore = useUserStore()
-const userInfo = ref({})
-const papers = ref([])
-const loading = ref(false)
-const showPaperDialog = ref(false)
-const submitting = ref(false)
-const currentPaper = ref(null)
-const currentPaperDetail = ref(null)
-const studentAnswers = ref({})
-const examTime = ref(0)
-const activeTab = ref('papers')
-let timer = null
-
-// 错题统计
-const wrongQuestionStats = ref({
-    total: 0,
-    weakType: '',
-    practiceCount: 0
-})
-
-// 统计
-const paperStats = computed(() => {
-    const total = papers.value.length
-    const completed = papers.value.filter(p => p.score !== null && p.score !== undefined).length
-    const pending = total - completed
-    const completedPapers = papers.value.filter(p => p.score !== null && p.score !== undefined)
-    const avgScore = completedPapers.length > 0
-        ? (completedPapers.reduce((sum, p) => sum + p.score, 0) / completedPapers.length).toFixed(1)
-        : 0
-
-    return { total, completed, pending, avgScore }
-})
-
-const answeredCount = computed(() => {
-    return Object.values(studentAnswers.value).filter(answer =>
-        answer !== null && answer !== undefined && answer !== ''
-    ).length
-})
-
-const formatExamTime = computed(() => {
-    const minutes = Math.floor(examTime.value / 60)
-    const seconds = examTime.value % 60
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-})
-
-// 加载学生试卷
-const loadPapers = async () => {
-    try {
-        loading.value = true
-        const response = await paperApi.getStudentPapers(userInfo.value.id)
-        papers.value = response.data || []
-    } catch (error) {
-        ElMessage.error('加载试卷失败: ' + error.message)
-        papers.value = []
-    } finally {
-        loading.value = false
-    }
-}
-
-// 加载错题统计
-const loadWrongQuestionStats = async () => {
-    try {
-        const response = await wrongQuestionApi.getWrongQuestions(userInfo.value.id)
-        const wrongQuestions = response.data || []
-        
-        wrongQuestionStats.value.total = wrongQuestions.length
-        
-        // 找出最薄弱的题型
-        const typeCount = {}
-        wrongQuestions.forEach(q => {
-            typeCount[q.type] = (typeCount[q.type] || 0) + 1
-        })
-        
-        let maxCount = 0
-        let weakType = ''
-        Object.keys(typeCount).forEach(type => {
-            if (typeCount[type] > maxCount) {
-                maxCount = typeCount[type]
-                weakType = getTypeText(type)
-            }
-        })
-        
-        wrongQuestionStats.value.weakType = weakType
-        wrongQuestionStats.value.practiceCount = Math.min(wrongQuestions.length, 10)
-        
-    } catch (error) {
-        console.error('加载错题统计失败:', error)
-    }
-}
-
-// 从错题集生成练习试卷
-const generatePracticeFromWrongQuestions = async () => {
-    try {
-        const response = await wrongQuestionApi.getWrongQuestions(userInfo.value.id)
-        const wrongQuestions = response.data || []
-        
-        if (wrongQuestions.length === 0) {
-            ElMessage.warning('错题集为空，无法生成练习试卷')
-            return
-        }
-
-        const questionIds = wrongQuestions.map(q => q.question_id).slice(0, 10)
-        const paperData = {
-            title: `错题专项练习 - ${formatDate(new Date())}`,
-            studentId: userInfo.value.id,
-            questionIds: questionIds
-        }
-
-        const paperResponse = await paperApi.generatePaper(paperData)
-        ElMessage.success('练习试卷生成成功！')
-        
-        await loadPapers()
-        
-        ElMessageBox.confirm('练习试卷已生成，是否立即开始答题？', '提示', {
-            confirmButtonText: '开始答题',
-            cancelButtonText: '稍后再说',
-            type: 'success'
-        }).then(() => {
-            const newPaper = papers.value.find(p => p.id === paperResponse.data.id)
-            if (newPaper) {
-                startPaper(newPaper)
-            }
-        })
-        
-    } catch (error) {
-        ElMessage.error('生成练习试卷失败: ' + error.message)
-    }
-}
-
-// 处理练习试卷生成事件
-const handlePracticeGenerated = () => {
-    loadPapers()
-    activeTab.value = 'papers'
-}
-
-// 开始答题
-const startPaper = async (paper) => {
-    try {
-        if (paper.score !== null && paper.score !== undefined) {
-            ElMessage.warning('该试卷已完成，无法再次答题')
-            return
-        }
-
-        const response = await paperApi.getPaperDetail(paper.id)
-        currentPaperDetail.value = response.data
-        currentPaper.value = paper
-
-        studentAnswers.value = {}
-        currentPaperDetail.value.questions.forEach(question => {
-            studentAnswers.value[question.id] = null
-        })
-
-        examTime.value = 0
-        timer = setInterval(() => {
-            examTime.value++
-        }, 1000)
-
-        showPaperDialog.value = true
-    } catch (error) {
-        ElMessage.error('加载试卷详情失败: ' + error.message)
-    }
-}
-
-// 答案变化处理
-const handleAnswerChange = (questionId) => {
-    console.log(`题目 ${questionId} 答案更新为:`, studentAnswers.value[questionId])
-}
-
-// 提交试卷
-const submitPaper = async () => {
-    try {
-        if (answeredCount.value < currentPaper.value.totalQuestions) {
-            ElMessage.warning(`请完成所有题目后再提交！还有 ${currentPaper.value.totalQuestions - answeredCount.value} 题未作答`)
-            return
-        }
-
-        submitting.value = true
-
-        let correctCount = 0
-        currentPaperDetail.value.questions.forEach(question => {
-            const studentAnswer = studentAnswers.value[question.id]
-            if (studentAnswer !== null && studentAnswer !== undefined &&
-                Math.abs(studentAnswer - question.answer) < 0.01) {
-                correctCount++
-            }
-        })
-
-        const score = (correctCount / currentPaperDetail.value.questions.length * 100).toFixed(1)
-
-        const submitData = {
-            answers: studentAnswers.value,
-            timeSpent: examTime.value,
-            score: parseFloat(score)
-        }
-
-        console.log('提交试卷数据:', submitData)
-
-        const response = await paperApi.submitPaper(currentPaper.value.id, submitData)
-
-        ElMessage.success(`试卷提交成功！得分: ${score}分`)
-        showPaperDialog.value = false
-
-        if (timer) {
-            clearInterval(timer)
-            timer = null
-        }
-
-        await loadPapers()
-        await loadWrongQuestionStats()
-    } catch (error) {
-        console.error('提交试卷错误:', error)
-        ElMessage.error('提交试卷失败: ' + (error.message || '网络错误'))
-    } finally {
-        submitting.value = false
-    }
-}
-
-// 工具函数
-const getStatusType = (paper) => {
-    if (paper.score !== null && paper.score !== undefined) return 'success'
-    return 'warning'
-}
-
-const getStatusText = (paper) => {
-    if (paper.score !== null && paper.score !== undefined) return '已完成'
-    return '待完成'
-}
-
-const formatTime = (seconds) => {
-    if (!seconds) return '0秒'
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    if (minutes > 0) {
-        return `${minutes}分${remainingSeconds}秒`
-    }
-    return `${remainingSeconds}秒`
-}
-
-const formatDate = (dateString) => {
-    if (!dateString) return '未知'
-    try {
-        const date = new Date(dateString)
-        return date.toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        })
-    } catch (error) {
-        return dateString
-    }
-}
-
-const getTypeText = (type) => {
-    const map = {
-        'AddAndSub': '加减运算',
-        'MulAndDiv': '乘除运算',
-        'Mixed': '混合运算'
-    }
-    return map[type] || type
-}
-
-const getTypeTagType = (type) => {
-    const map = {
-        'AddAndSub': 'success',
-        'MulAndDiv': 'primary',
-        'Mixed': 'warning'
-    }
-    return map[type] || 'info'
-}
-
-const getDifficultyText = (difficulty) => {
-    const map = {
-        'easy': '简单',
-        'medium': '中等',
-        'hard': '困难'
-    }
-    return map[difficulty] || difficulty
-}
-
-const getDifficultyTagType = (difficulty) => {
-    const map = {
-        'easy': 'success',
-        'medium': 'warning',
-        'hard': 'danger'
-    }
-    return map[difficulty] || 'info'
-}
-
-const handleLogout = async () => {
-    try {
-        await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning'
-        })
-
-        userStore.clearUserInfo()
-        ElMessage.success('已退出登录')
-        router.push('/login?_=' + Date.now())
-    } catch {
-        // 用户取消退出
-    }
-}
-
-onMounted(() => {
-    if (!userStore.isLoggedIn) {
-        router.push('/login')
-        return
-    }
-    userInfo.value = userStore.userInfo
-    loadPapers()
-    loadWrongQuestionStats()
-})
-</script>
 
 <style scoped>
 .student-dashboard {
@@ -770,6 +783,10 @@ onMounted(() => {
     color: #303133;
 }
 
+.answer-status {
+    margin-left: auto;
+}
+
 .question-text {
     font-size: 16px;
     color: #303133;
@@ -778,6 +795,23 @@ onMounted(() => {
 
 .answer-input {
     margin-top: 15px;
+}
+
+.correct-answer-section {
+    margin-top: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.correct-text {
+    color: #67c23a;
+    font-weight: bold;
+}
+
+.wrong-text {
+    color: #f56c6c;
+    font-weight: bold;
 }
 
 .exam-footer {

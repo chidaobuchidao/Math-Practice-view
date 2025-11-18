@@ -36,4 +36,3 @@ export const paperApi = {
     return request.post(`/papers/${paperId}/submit`, data)
   },
 }
-
