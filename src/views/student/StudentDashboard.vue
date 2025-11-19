@@ -15,9 +15,10 @@ import {
 } from '@element-plus/icons-vue'
 import { paperApi } from '@/api/paper'
 import { wrongQuestionApi } from '@/api/wrongQuestion'
+import { questionApi } from '@/api/question'
 import { useUserStore } from '@/stores/user'
 import WrongQuestions from './components/WrongQuestions.vue'
-import { getTypeName, getDifficultyName, getTypeTagType, getDifficultyTagType } from '@/utils/type'
+import { getTypeName, getDifficultyName, getTypeTagType, getDifficultyTagType, getTypeTextByKey } from '@/utils/type'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -65,6 +66,30 @@ const formatExamTime = computed(() => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 })
 
+// 新增：增强题目信息，获取正确答案等详细信息
+const enhanceQuestionsWithDetails = async (questions) => {
+    try {
+        for (let question of questions) {
+            // 如果题目信息不完整，获取完整题目详情
+            if (!question.answers || question.answers.length === 0) {
+                try {
+                    const questionDetail = await questionApi.getQuestionById(question.id)
+                    if (questionDetail.data) {
+                        // 合并题目详情，保留学生答案信息
+                        const studentAnswer = question.studentAnswer
+                        Object.assign(question, questionDetail.data)
+                        question.studentAnswer = studentAnswer // 恢复学生答案
+                    }
+                } catch (error) {
+                    console.warn(`获取题目 ${question.id} 详情失败:`, error)
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('增强题目信息失败:', error)
+    }
+}
+
 // 加载学生试卷
 const loadPapers = async () => {
     try {
@@ -87,14 +112,27 @@ const loadWrongQuestionStats = async () => {
 
         wrongQuestionStats.value.total = wrongQuestions.length
 
-        // 找出最薄弱的题型
+        // 计算薄弱题型
         const typeCount = {}
         wrongQuestions.forEach(q => {
-            typeCount[q.type] = (typeCount[q.type] || 0) + 1
+            const typeKey = q.type_id || q.type
+            if (typeKey !== null && typeKey !== undefined && typeKey !== '') {
+                typeCount[typeKey] = (typeCount[typeKey] || 0) + 1
+            }
         })
 
         let maxCount = 0
         let weakType = ''
+        const getTypeText = (input) => {
+            if (input === null || input === undefined || input === '') return '未知类型'
+            if (typeof input === 'number') return getTypeName(input)
+            if (typeof input === 'string') {
+                if (/^\d+$/.test(input)) return getTypeName(parseInt(input))
+                return getTypeTextByKey(input)
+            }
+            return String(input)
+        }
+
         Object.keys(typeCount).forEach(type => {
             if (typeCount[type] > maxCount) {
                 maxCount = typeCount[type]
@@ -169,10 +207,10 @@ const startPaper = async (paper) => {
 
         studentAnswers.value = {}
 
-        // 初始化学生答案
+        // 初始化学生答案 - 从试卷详情中获取学生答案
         if (currentPaperDetail.value.questions) {
             currentPaperDetail.value.questions.forEach(question => {
-                // 如果已经有学生答案，使用已有的
+                // 从试卷详情中获取学生答案
                 if (question.studentAnswer !== null && question.studentAnswer !== undefined) {
                     studentAnswers.value[question.id] = question.studentAnswer
                 } else {
@@ -234,18 +272,43 @@ const submitPaper = async () => {
     }
 }
 
-// 查看试卷详情
+// 查看试卷详情 - 关键修改
 const viewPaperDetail = async (paper) => {
     try {
         const response = await paperApi.getPaperDetail(paper.id)
         currentPaperDetail.value = response.data
         currentPaper.value = paper
+
+        console.log('试卷详情数据:', currentPaperDetail.value)
+
+        // 重新初始化学生答案 - 从试卷详情中获取
+        studentAnswers.value = {}
+        if (currentPaperDetail.value.questions) {
+            currentPaperDetail.value.questions.forEach(question => {
+                // 关键修改：从试卷详情的 paper_questions 关联数据中获取学生答案
+                // 学生答案可能在 question.paper_question 中
+                if (question.paper_question && question.paper_question.student_answer !== null) {
+                    studentAnswers.value[question.id] = question.paper_question.student_answer
+                } else if (question.studentAnswer !== null && question.studentAnswer !== undefined) {
+                    studentAnswers.value[question.id] = question.studentAnswer
+                } else {
+                    studentAnswers.value[question.id] = null
+                }
+            })
+        }
+
+        console.log('学生答案数据:', studentAnswers.value)
+
+        // 增强题目信息，获取正确答案等
+        if (currentPaperDetail.value.questions) {
+            await enhanceQuestionsWithDetails(currentPaperDetail.value.questions)
+        }
+
         showPaperDialog.value = true
     } catch (error) {
         ElMessage.error('加载试卷详情失败: ' + error.message)
     }
 }
-
 // 获取题目正确答案
 const getQuestionAnswer = (answers) => {
     if (!answers || answers.length === 0) return '无答案'
@@ -259,6 +322,7 @@ const getQuestionAnswer = (answers) => {
     // 如果没有标记正确答案，返回第一个答案
     return answers[0]?.content || '无答案'
 }
+
 // 工具函数
 const getStatusType = (paper) => {
     if (paper.score !== null && paper.score !== undefined) return 'success'
@@ -297,6 +361,7 @@ const formatDate = (dateString) => {
 }
 
 // 使用工具函数库提供的类型/难度映射和标签样式
+const getTypeText = getTypeName
 
 const handleLogout = async () => {
     try {
@@ -537,7 +602,7 @@ onMounted(() => {
                     <el-descriptions :column="2" border>
                         <el-descriptions-item label="用户名">{{ userInfo.username }}</el-descriptions-item>
                         <el-descriptions-item label="角色">{{ userInfo.role === 'student' ? '学生' : userInfo.role
-                        }}</el-descriptions-item>
+                            }}</el-descriptions-item>
                         <el-descriptions-item label="班级">{{ userInfo.userClass || '未设置' }}</el-descriptions-item>
                         <el-descriptions-item label="注册时间">{{ formatDate(userInfo.createdAt) }}</el-descriptions-item>
                     </el-descriptions>
@@ -545,7 +610,7 @@ onMounted(() => {
             </el-main>
         </el-container>
 
-        <!-- 答题对话框 -->
+        <!-- 答题对话框 - 关键修改 -->
         <el-dialog v-model="showPaperDialog"
             :title="`${currentPaper?.score ? '试卷详情' : '正在答题'} - ${currentPaper?.title}`" width="800px" fullscreen>
             <div v-if="currentPaperDetail" class="paper-exam">
@@ -557,7 +622,7 @@ onMounted(() => {
                             <span v-if="currentPaper.score">得分: {{ currentPaper.score }} 分</span>
                             <span v-if="currentPaper.score">正确题数: {{ currentPaper.correctCount }}/{{
                                 currentPaper.totalQuestions
-                            }}</span>
+                                }}</span>
                             <span v-else>已答: {{ answeredCount }}/{{ currentPaper.totalQuestions }}</span>
                             <span>用时: {{ formatTime(currentPaper.score ? currentPaper.timeSpent : examTime) }}</span>
                         </div>
@@ -591,21 +656,23 @@ onMounted(() => {
                         <div class="question-content">
                             <p class="question-text">{{ question.content }}</p>
 
-                            <div class="answer-input">
+                            <!-- 答题状态 -->
+                            <div v-if="!currentPaper.score" class="answer-input">
                                 <el-input-number v-model="studentAnswers[question.id]" :precision="2"
                                     placeholder="请输入答案" style="width: 200px;"
-                                    :disabled="currentPaper.score !== null && currentPaper.score !== undefined"
                                     @change="handleAnswerChange(question.id)" />
                             </div>
 
-                            <!-- 显示正确答案（如果试卷已完成） -->
-                            <div v-if="currentPaper.score" class="correct-answer-section">
-                                <p><strong>正确答案:</strong> {{ getQuestionAnswer(question.answers) }}</p>
-                                <p><strong>你的答案:</strong>
-                                    <span :class="question.isCorrect ? 'correct-text' : 'wrong-text'">
-                                        {{ studentAnswers[question.id] || '未作答' }}
-                                    </span>
-                                </p>
+                            <!-- 显示正确答案和学生答案（如果试卷已完成） -->
+                            <div v-if="currentPaper.score" class="answer-review">
+                                <div class="correct-answer-section">
+                                    <p><strong>正确答案:</strong> {{ getQuestionAnswer(question.answers) }}</p>
+                                    <p><strong>你的答案:</strong>
+                                        <span :class="question.isCorrect ? 'correct-text' : 'wrong-text'">
+                                            {{ studentAnswers[question.id] || '未作答' }}
+                                        </span>
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -797,8 +864,11 @@ onMounted(() => {
     margin-top: 15px;
 }
 
-.correct-answer-section {
+.answer-review {
     margin-top: 15px;
+}
+
+.correct-answer-section {
     padding: 10px;
     background: #f8f9fa;
     border-radius: 4px;

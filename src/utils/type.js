@@ -50,7 +50,7 @@ export const getDifficultyTagType = (difficultyId) => {
   return difficultyMap[difficultyId] || 'info'
 }
 
-// 以下为字符串键（例如错题集使用的 'AddAndSub' / 'easy'）的兼容工具函数
+// 以下为旧的字符串键（例如错题集使用的 'AddAndSub' / 'easy'）的兼容工具函数，待淘汰
 export const getTypeTextByKey = (key) => {
   const map = {
     'AddAndSub': '加减运算',

@@ -30,14 +30,8 @@
         <el-col :span="6">
           <el-statistic title="错题总数" :value="wrongQuestions.length" />
         </el-col>
-        <el-col :span="6">
-          <el-statistic title="加减运算错题" :value="getTypeCount('AddAndSub')" />
-        </el-col>
-        <el-col :span="6">
-          <el-statistic title="乘除运算错题" :value="getTypeCount('MulAndDiv')" />
-        </el-col>
-        <el-col :span="6">
-          <el-statistic title="混合运算错题" :value="getTypeCount('Mixed')" />
+        <el-col :span="6" v-for="stat in typeStats" :key="stat.typeKey">
+          <el-statistic :title="`${stat.typeName}错题`" :value="stat.count" />
         </el-col>
       </el-row>
 
@@ -63,14 +57,11 @@
             <span>错题列表</span>
             <div class="header-actions">
               <el-select v-model="filterType" placeholder="按类型筛选" clearable style="width: 120px; margin-right: 10px;">
-                <el-option label="加减运算" value="AddAndSub" />
-                <el-option label="乘除运算" value="MulAndDiv" />
-                <el-option label="混合运算" value="Mixed" />
+                <el-option v-for="type in uniqueTypes" :key="type" :label="getTypeText(type)" :value="type" />
               </el-select>
               <el-select v-model="filterDifficulty" placeholder="按难度筛选" clearable style="width: 120px;">
-                <el-option label="简单" value="easy" />
-                <el-option label="中等" value="medium" />
-                <el-option label="困难" value="hard" />
+                <el-option v-for="diff in uniqueDifficulties" :key="diff" :label="getDifficultyText(diff)"
+                  :value="diff" />
               </el-select>
             </div>
           </div>
@@ -83,14 +74,14 @@
               <div class="question-content">
                 <div class="question-text">{{ row.content }}</div>
                 <div class="question-meta">
-                  <el-tag size="small" :type="getTypeTagType(row.type)">
-                    {{ getTypeText(row.type) }}
+                  <el-tag size="small" :type="getTypeTagType(row.type_id || row.type)">
+                    {{ getTypeText(row.type_id || row.type) }}
                   </el-tag>
-                  <el-tag size="small" :type="getDifficultyTagType(row.difficulty)">
-                    {{ getDifficultyText(row.difficulty) }}
+                  <el-tag size="small" :type="getDifficultyTagType(row.difficulty_id || row.difficulty)">
+                    {{ getDifficultyText(row.difficulty_id || row.difficulty) }}
                   </el-tag>
-                  <span class="wrong-answer">我的答案: {{ row.wrong_answer || '未作答' }}</span>
-                  <span class="correct-answer">正确答案: {{ row.answer }}</span>
+                  <span class="wrong-answer">我的答案: {{ formatStudentAnswer(row.wrong_answer) }}</span>
+                  <span class="correct-answer">正确答案: {{ formatCorrectAnswer(row.correct_answer || row.answer) }}</span>
                   <span class="record-time">记录时间: {{ formatDate(row.created_at) }}</span>
                 </div>
               </div>
@@ -101,7 +92,7 @@
               <el-button type="primary" size="small" @click="reviewQuestion(row)">
                 复习
               </el-button>
-              <el-button type="danger" size="small" @click="handleRemoveWrongQuestion(row.question_id)">
+              <el-button type="danger" size="small" @click="handleRemoveWrongQuestion(row.question_id || row.id)">
                 移除
               </el-button>
             </template>
@@ -117,11 +108,12 @@
       <el-dialog v-model="showReviewDialog" :title="`复习题目 - 第${reviewQuestionIndex + 1}题`" width="600px">
         <div v-if="currentReviewQuestion" class="review-content">
           <div class="question-header">
-            <el-tag size="small" :type="getTypeTagType(currentReviewQuestion.type)">
-              {{ getTypeText(currentReviewQuestion.type) }}
+            <el-tag size="small" :type="getTypeTagType(currentReviewQuestion.type_id || currentReviewQuestion.type)">
+              {{ getTypeText(currentReviewQuestion.type_id || currentReviewQuestion.type) }}
             </el-tag>
-            <el-tag size="small" :type="getDifficultyTagType(currentReviewQuestion.difficulty)">
-              {{ getDifficultyText(currentReviewQuestion.difficulty) }}
+            <el-tag size="small"
+              :type="getDifficultyTagType(currentReviewQuestion.difficulty_id || currentReviewQuestion.difficulty)">
+              {{ getDifficultyText(currentReviewQuestion.difficulty_id || currentReviewQuestion.difficulty) }}
             </el-tag>
           </div>
 
@@ -135,7 +127,7 @@
           </div>
 
           <div class="review-actions" style="margin-top: 20px;">
-            <el-button @click="checkAnswer" type="primary" :disabled="!reviewAnswer">
+            <el-button @click="checkAnswer" type="primary" :disabled="reviewAnswer === null">
               检查答案
             </el-button>
             <el-button @click="showAnswer" type="link">
@@ -147,7 +139,12 @@
             <el-alert :title="resultMessage" :type="isAnswerCorrect ? 'success' : 'error'" :closable="false" show-icon>
             </el-alert>
             <div v-if="!isAnswerCorrect" style="margin-top: 10px;">
-              <span style="color: #67c23a;">正确答案: {{ currentReviewQuestion.answer }}</span>
+              <span style="color: #67c23a;">正确答案: {{ formatCorrectAnswer(currentReviewQuestion.correct_answer ||
+                currentReviewQuestion.answer) }}</span>
+            </div>
+            <div v-if="currentReviewQuestion.analysis"
+              style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+              <strong>解析:</strong> {{ currentReviewQuestion.analysis }}
             </div>
           </div>
         </div>
@@ -169,7 +166,7 @@ import { Delete, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { wrongQuestionApi } from '@/api/wrongQuestion'
 import { paperApi } from '@/api/paper'
-import { getTypeTextByKey, getTypeTagTypeByKey, getDifficultyTextByKey, getDifficultyTagTypeByKey } from '@/utils/type'
+import { getTypeName as utilGetTypeName, getTypeTagType as utilGetTypeTagType, getDifficultyName as utilGetDifficultyName, getDifficultyTagType as utilGetDifficultyTagType, getTypeTextByKey, getTypeTagTypeByKey, getDifficultyTextByKey, getDifficultyTagTypeByKey } from '@/utils/type'
 
 const props = defineProps({
   studentId: {
@@ -208,15 +205,78 @@ const isStudentIdValid = computed(() => {
 const filteredWrongQuestions = computed(() => {
   let filtered = wrongQuestions.value
 
-  if (filterType.value) {
-    filtered = filtered.filter(q => q.type === filterType.value)
+  if (filterType.value !== null && filterType.value !== undefined && filterType.value !== '') {
+    filtered = filtered.filter(q => {
+      const qTypeKey = q.type_id || q.type
+      // 直接比较 typeKey（数字或字符串）
+      if (qTypeKey === filterType.value) {
+        return true
+      }
+      // 如果 filterType.value 是数字或字符串，都能正确匹配
+      return false
+    })
   }
 
-  if (filterDifficulty.value) {
-    filtered = filtered.filter(q => q.difficulty === filterDifficulty.value)
+  if (filterDifficulty.value !== null && filterDifficulty.value !== undefined && filterDifficulty.value !== '') {
+    filtered = filtered.filter(q => {
+      const qDiffKey = q.difficulty_id || q.difficulty
+      // 直接比较 diffKey（数字或字符串）
+      if (qDiffKey === filterDifficulty.value) {
+        return true
+      }
+      return false
+    })
   }
 
   return filtered
+})
+
+// 获取所有唯一的类型
+const uniqueTypes = computed(() => {
+  const types = new Set()
+  wrongQuestions.value.forEach(q => {
+    const typeValue = q.type_id || q.type
+    if (typeValue !== null && typeValue !== undefined) {
+      types.add(typeValue)
+    }
+  })
+  return Array.from(types).sort()
+})
+
+// 获取所有唯一的难度
+const uniqueDifficulties = computed(() => {
+  const difficulties = new Set()
+  wrongQuestions.value.forEach(q => {
+    const diffValue = q.difficulty_id || q.difficulty
+    if (diffValue !== null && diffValue !== undefined) {
+      difficulties.add(diffValue)
+    }
+  })
+  return Array.from(difficulties).sort()
+})
+
+// 类型统计信息（用于统计栏）
+const typeStats = computed(() => {
+  const stats = {}
+  wrongQuestions.value.forEach(q => {
+    const typeKey = q.type_id || q.type
+    if (typeKey !== null && typeKey !== undefined) {
+      if (!stats[typeKey]) {
+        stats[typeKey] = {
+          typeKey,
+          typeName: getTypeText(typeKey),
+          count: 0
+        }
+      }
+      stats[typeKey].count++
+    }
+  })
+  return Object.values(stats).sort((a, b) => {
+    if (typeof a.typeKey === 'number' && typeof b.typeKey === 'number') {
+      return a.typeKey - b.typeKey
+    }
+    return String(a.typeKey).localeCompare(String(b.typeKey))
+  })
 })
 
 // 加载错题列表
@@ -232,6 +292,8 @@ const loadWrongQuestions = async () => {
     const response = await wrongQuestionApi.getWrongQuestions(props.studentId)
     wrongQuestions.value = response.data || []
 
+    console.log('加载的错题数据:', wrongQuestions.value)
+
     // 数据更新会自动触发 watch，从而调用 forceRefreshChart()
   } catch (error) {
     ElMessage.error('加载错题列表失败: ' + (error.message || '未知错误'))
@@ -239,6 +301,63 @@ const loadWrongQuestions = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 格式化学生答案显示
+const formatStudentAnswer = (answer) => {
+  if (!answer) return '未作答'
+  if (typeof answer === 'number') return answer
+  if (typeof answer === 'string') {
+    // 如果是小数，保留2位
+    const num = parseFloat(answer)
+    if (!isNaN(num)) {
+      return num.toFixed(2)
+    }
+  }
+  return answer
+}
+
+// 格式化正确答案显示
+const formatCorrectAnswer = (answer) => {
+  if (!answer) return '无答案'
+  if (typeof answer === 'number') return answer
+  if (typeof answer === 'string') {
+    // 如果是小数，保留2位
+    const num = parseFloat(answer)
+    if (!isNaN(num)) {
+      return num.toFixed(2)
+    }
+  }
+  return answer
+}
+
+// 解析答案（支持分数格式）
+const parseAnswer = (answer) => {
+  if (!answer) return null
+
+  // 如果是数字，直接返回
+  if (typeof answer === 'number') return answer
+
+  // 如果是字符串
+  if (typeof answer === 'string') {
+    // 处理分数格式，如 "5/6"
+    if (answer.includes('/')) {
+      const parts = answer.split('/')
+      if (parts.length === 2) {
+        const numerator = parseFloat(parts[0])
+        const denominator = parseFloat(parts[1])
+        if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+          return numerator / denominator
+        }
+      }
+    }
+
+    // 尝试解析为数字
+    const num = parseFloat(answer)
+    if (!isNaN(num)) return num
+  }
+
+  return null
 }
 
 // 强制刷新图表（处理容器被销毁重建的情况）
@@ -261,7 +380,6 @@ const forceRefreshChart = () => {
   }
 
   // 延迟后重新初始化（确保 DOM 已挂载并计算好尺寸）
-  // 使用更长的延迟确保布局完成
   nextTick(() => {
     setTimeout(() => {
       console.log('准备调用 updateChart，chartRef 是否存在:', !!chartRef.value)
@@ -309,17 +427,15 @@ const updateChart = () => {
     }
   }
 
-  // 统计各类型错题数量
-  const typeData = {
-    'AddAndSub': { name: '加减运算', value: 0 },
-    'MulAndDiv': { name: '乘除运算', value: 0 },
-    'Mixed': { name: '混合运算', value: 0 }
-  }
+  // 统计各类型错题数量（完全动态）
+  const typeData = {}
 
   wrongQuestions.value.forEach(question => {
-    if (typeData[question.type]) {
-      typeData[question.type].value++
+    const typeText = getTypeText(question.type_id || question.type)
+    if (!typeData[typeText]) {
+      typeData[typeText] = { name: typeText, value: 0 }
     }
+    typeData[typeText].value++
   })
 
   const chartData = Object.values(typeData).filter(item => item.value > 0)
@@ -441,7 +557,7 @@ const generatePracticePaper = async () => {
 
     generating.value = true
 
-    const questionIds = wrongQuestions.value.map(q => q.question_id)
+    const questionIds = wrongQuestions.value.map(q => q.question_id || q.id)
     const paperData = {
       title: `错题专项练习 - ${formatDate(new Date())}`,
       studentId: props.studentId,
@@ -468,25 +584,35 @@ const reviewQuestion = (question) => {
   currentReviewQuestion.value = question
   reviewAnswer.value = null
   showResult.value = false
+  isAnswerCorrect.value = false
   showReviewDialog.value = true
 }
 
 // 检查答案
 const checkAnswer = () => {
-  if (reviewAnswer.value === null || reviewAnswer.value === undefined) {
+  if (reviewAnswer.value === null) {
     ElMessage.warning('请输入答案')
     return
   }
 
-  const correctAnswer = currentReviewQuestion.value.answer
-  isAnswerCorrect.value = Math.abs(reviewAnswer.value - correctAnswer) < 0.01
+  // 获取正确答案并解析
+  const correctAnswerValue = parseAnswer(currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer)
+
+  if (correctAnswerValue === null) {
+    ElMessage.error('无法解析正确答案')
+    return
+  }
+
+  // 比较答案（考虑浮点数精度）
+  isAnswerCorrect.value = Math.abs(reviewAnswer.value - correctAnswerValue) < 0.01
 
   if (isAnswerCorrect.value) {
     resultMessage.value = '回答正确！太棒了！'
     // 如果回答正确，自动从错题集中移除
     setTimeout(() => {
-      handleRemoveWrongQuestion(currentReviewQuestion.value.question_id)
-    }, 1000)
+      handleRemoveWrongQuestion(currentReviewQuestion.value.question_id || currentReviewQuestion.value.id)
+      showReviewDialog.value = false
+    }, 1500)
   } else {
     resultMessage.value = '回答错误，再想想看！'
   }
@@ -496,7 +622,10 @@ const checkAnswer = () => {
 
 // 显示答案
 const showAnswer = () => {
-  reviewAnswer.value = currentReviewQuestion.value.answer
+  const correctAnswerValue = parseAnswer(currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer)
+  if (correctAnswerValue !== null) {
+    reviewAnswer.value = correctAnswerValue
+  }
   isAnswerCorrect.value = false
   resultMessage.value = '这是正确答案，请记住它！'
   showResult.value = true
@@ -509,6 +638,7 @@ const nextQuestion = () => {
     currentReviewQuestion.value = reviewQuestions.value[reviewQuestionIndex.value]
     reviewAnswer.value = null
     showResult.value = false
+    isAnswerCorrect.value = false
   } else {
     showReviewDialog.value = false
     ElMessage.success('复习完成！')
@@ -517,15 +647,56 @@ const nextQuestion = () => {
 
 // 统计各类型错题数量
 const getTypeCount = (type) => {
-  return wrongQuestions.value.filter(q => q.type === type).length
+  return wrongQuestions.value.filter(q => {
+    const typeText = getTypeText(q.type_id || q.type)
+    return typeText === type
+  }).length
 }
 
-// 工具函数
-// 使用 utils 提供的字符串键兼容函数
-const getTypeText = getTypeTextByKey
-const getTypeTagType = getTypeTagTypeByKey
-const getDifficultyText = getDifficultyTextByKey
-const getDifficultyTagType = getDifficultyTagTypeByKey
+// 工具函数 - 智能映射，支持数字 id 和字符串 key
+// 智能类型名称映射：支持数字 id 和字符串 key，统一委托到 utils/type.js
+const getTypeText = (input) => {
+  if (input === null || input === undefined || input === '') return '未知类型'
+  if (typeof input === 'number') return utilGetTypeName(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetTypeName(parseInt(input))
+    return getTypeTextByKey(input)
+  }
+  return String(input)
+}
+
+// 智能类型标签样式映射：支持数字 id 和字符串 key
+const getTypeTagType = (input) => {
+  if (input === null || input === undefined || input === '') return 'info'
+  if (typeof input === 'number') return utilGetTypeTagType(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetTypeTagType(parseInt(input))
+    return getTypeTagTypeByKey(input)
+  }
+  return 'info'
+}
+
+// 智能难度名称映射：支持数字 id 和字符串 key
+const getDifficultyText = (input) => {
+  if (input === null || input === undefined || input === '') return '未知难度'
+  if (typeof input === 'number') return utilGetDifficultyName(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetDifficultyName(parseInt(input))
+    return getDifficultyTextByKey(input)
+  }
+  return String(input)
+}
+
+// 智能难度标签样式映射：支持数字 id 和字符串 key
+const getDifficultyTagType = (input) => {
+  if (input === null || input === undefined || input === '') return 'info'
+  if (typeof input === 'number') return utilGetDifficultyTagType(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetDifficultyTagType(parseInt(input))
+    return getDifficultyTagTypeByKey(input)
+  }
+  return 'info'
+}
 
 // 格式化日期
 const formatDate = (dateString) => {
