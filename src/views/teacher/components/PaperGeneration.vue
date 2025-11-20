@@ -172,7 +172,7 @@
         <el-descriptions :column="2" border style="margin-bottom: 20px;">
           <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
           <el-descriptions-item label="学生">{{ getStudentName(currentPaperDetail.paper.studentId)
-            }}</el-descriptions-item>
+          }}</el-descriptions-item>
           <el-descriptions-item label="题目数量">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
           <el-descriptions-item label="得分">
             <span v-if="currentPaperDetail.paper.score !== null && currentPaperDetail.paper.score !== undefined">
@@ -334,17 +334,14 @@ const getDifficultyName = (difficultyId) => {
   return difficulty ? difficulty.name : '未知难度'
 }
 
-// 获取题目答案
 const getQuestionAnswer = (answers) => {
   if (!answers || answers.length === 0) return '无答案'
 
-  // 查找正确答案
   const correctAnswer = answers.find(answer => answer.isCorrect)
   if (correctAnswer) {
     return correctAnswer.content
   }
 
-  // 如果没有标记正确答案，返回第一个答案
   return answers[0]?.content || '无答案'
 }
 
@@ -377,9 +374,37 @@ const loadAvailableQuestions = async () => {
   try {
     const response = await questionApi.getAllQuestions()
     availableQuestions.value = response.data || []
-    console.log('可用题目:', availableQuestions.value)
+
+    // 如果题目没有答案，尝试通过详情API获取完整信息
+    if (availableQuestions.value.length > 0 && !availableQuestions.value[0].answers) {
+      await loadQuestionsWithAnswers()
+    }
   } catch (error) {
     ElMessage.error('加载题目失败: ' + error.message)
+  }
+}
+
+// 使用能获取答案的方式加载题目
+const loadQuestionsWithAnswers = async () => {
+  try {
+    const detailedQuestions = []
+    for (const question of availableQuestions.value) {
+      try {
+        // 通过获取单个题目详情的API获取完整信息（包含答案）
+        const detailResponse = await questionApi.getQuestionById(question.id)
+        if (detailResponse.data && detailResponse.data.answers) {
+          detailedQuestions.push(detailResponse.data)
+        } else {
+          detailedQuestions.push(question)
+        }
+      } catch (error) {
+        console.warn(`获取题目 ${question.id} 详情失败:`, error)
+        detailedQuestions.push(question)
+      }
+    }
+    availableQuestions.value = detailedQuestions
+  } catch (error) {
+    console.warn('获取题目详情失败:', error)
   }
 }
 
