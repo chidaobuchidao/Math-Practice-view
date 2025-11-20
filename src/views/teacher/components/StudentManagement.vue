@@ -248,8 +248,6 @@ const enhanceQuestionsWithDetails = async (questions) => {
 // 使用工具库中的名称函数以保持一致
 const getTypeText = getTypeName
 
-// 使用共享工具库提供的标签样式函数 (getTypeTagType 已导入)
-
 // 使用工具库中的难度名称和标签样式
 const getDifficultyText = getDifficultyName
 
@@ -316,7 +314,7 @@ onMounted(() => {
           </el-icon>
           刷新
         </el-button>
-        <el-button type="success" @click="showAddDialog = true" style="margin-right: 25px;">
+        <el-button type="success" @click="showAddDialog = true" style="margin-right: 20px;">
           <el-icon>
             <Plus />
           </el-icon>

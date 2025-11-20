@@ -124,9 +124,9 @@
         </div>
       </template>
 
-      <el-table :data="currentPageQuestions" v-loading="loading" :default-sort="{ prop: 'id', order: 'ascending' }">
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="id" label="题目ID" width="80" align="center" sortable />
+      <el-table :data="currentPageQuestions" v-loading="loading" :default-sort="{ prop: 'id', order: 'ascending' }"
+        style="margin-top: -15px">
+        <el-table-column prop="id" label="题目ID" width="100" align="center" sortable />
         <el-table-column prop="content" label="题目内容" min-width="200" />
         <el-table-column prop="subject" label="科目" width="120" sortable>
           <template #default="{ row }">
@@ -541,8 +541,8 @@ const handleGenerate = async () => {
       createdBy: userStore.userInfo?.id
     }
 
-    // 调用生成接口 - 这里需要根据实际后端接口调整
-    // 暂时模拟生成过程
+    // 调用生成接口 - 后端接口待更新
+    // 目前暂时模拟生成过程
     await new Promise(resolve => setTimeout(resolve, 2000))
 
     ElMessage.success(`成功生成 ${generateForm.count} 道题目`)
@@ -642,7 +642,7 @@ const loadQuestions = async () => {
   }
 }
 
-// 使用能获取答案的方式加载题目
+// 加载题目
 const loadQuestionsWithAnswers = async () => {
   try {
     // 方法1: 通过试卷详情API的模式获取
