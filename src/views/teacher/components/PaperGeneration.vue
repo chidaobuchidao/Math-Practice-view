@@ -2,11 +2,42 @@
   <div class="paper-generation">
     <div class="toolbar">
       <h3>试卷生成</h3>
-      <el-button type="primary" @click="showGenerateDialog = true">
+    </div>
+
+    <!-- 筛选工具栏 -->
+    <div class="filter-toolbar">
+      <el-button type="primary" @click="showGenerateDialog = true" style="margin-right: 20px;">
         <el-icon>
           <Plus />
         </el-icon>
         生成新试卷
+      </el-button>
+      <div class="filter-placeholder"></div>
+      <el-input v-model="searchTitle" placeholder="搜索试卷标题" clearable style="width: 200px; margin-right: 10px;"
+        @clear="handleSearch" @keyup.enter="handleSearch">
+        <template #prefix>
+          <el-icon>
+            <Search />
+          </el-icon>
+        </template>
+      </el-input>
+
+      <el-select v-model="filterStudent" placeholder="选择学生" clearable style="width: 150px; margin-right: 10px;">
+        <el-option label="全部学生" value=""></el-option>
+        <el-option v-for="student in students" :key="student.id" :label="student.username" :value="student.id" />
+      </el-select>
+
+      <el-button type="primary" @click="handleSearch">
+        <el-icon>
+          <Search />
+        </el-icon>
+        搜索
+      </el-button>
+      <el-button @click="resetSearch">
+        <el-icon>
+          <Refresh />
+        </el-icon>
+        重置
       </el-button>
     </div>
 
@@ -16,14 +47,18 @@
         <div class="card-header">
           <span>已生成的试卷</span>
           <div class="header-stats">
-            共 <el-tag type="primary">{{ papers.length }}</el-tag> 份试卷
+            共 <el-tag type="primary">{{ pagination.total }}</el-tag> 份试卷
+            <span v-if="filteredPapers.length !== allPapers.length" class="filtered-count">
+              (筛选出 {{ filteredPapers.length }} 份)
+            </span>
           </div>
         </div>
       </template>
 
-      <el-table :data="papers" v-loading="loading" style="width: 100%">
+      <el-table :data="currentPagePapers" v-loading="loading" style="width: 100%">
+        <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="id" label="试卷ID" width="100" align="center" />
-        <el-table-column prop="title" label="试卷标题" />
+        <el-table-column prop="title" label="试卷标题" min-width="200" />
         <el-table-column prop="studentId" label="学生ID" width="100" align="center" />
         <el-table-column label="学生姓名" width="120">
           <template #default="{ row }">
@@ -44,7 +79,7 @@
             {{ formatDate(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewPaperDetail(row.id)">
               查看详情
@@ -55,6 +90,13 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页组件 -->
+      <div class="pagination-container">
+        <el-pagination v-model:current-page="pagination.currentPage" v-model:page-size="pagination.pageSize"
+          :page-sizes="[20, 50, 100, 200]" :total="pagination.total" layout="sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange" @current-change="handleCurrentChange" />
+      </div>
     </el-card>
 
     <!-- 生成试卷对话框 -->
@@ -132,9 +174,14 @@
 
             <div class="questions-list">
               <el-checkbox-group v-model="paperForm.questionIds" style="width: 100%">
-                <div class="question-item" v-for="question in availableQuestions" :key="question.id">
+                <div class="question-item" v-for="(question, index) in availableQuestions" :key="question.id">
                   <el-checkbox :label="question.id">
                     <div class="question-content">
+                      <!-- 添加序号显示 -->
+                      <div class="question-header">
+                        <span class="question-index">#{{ index + 1 }}</span>
+                        <span class="question-id">ID: {{ question.id }}</span>
+                      </div>
                       <span class="question-text">{{ question.content }}</span>
                       <div class="question-meta">
                         <el-tag size="small" :type="getTypeTagType(question.typeId)">
@@ -185,6 +232,7 @@
 
         <h4>题目列表</h4>
         <el-table :data="currentPaperDetail.questions" style="width: 100%">
+          <el-table-column type="index" label="序号" width="60" align="center" />
           <el-table-column prop="id" label="题目ID" width="80" />
           <el-table-column prop="content" label="题目内容" />
           <el-table-column label="类型" width="100">
@@ -219,13 +267,14 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh } from '@element-plus/icons-vue'
 import { userApi } from '@/api/user'
 import { questionApi } from '@/api/question'
 import { paperApi } from '@/api/paper'
 import { getTypeTagType, getDifficultyTagType } from '@/utils/type'
 
-const papers = ref([])
+const allPapers = ref([]) // 存储所有试卷
+const filteredPapers = ref([]) // 存储筛选后的试卷
 const loading = ref(false)
 const generating = ref(false)
 const showGenerateDialog = ref(false)
@@ -236,6 +285,17 @@ const currentPaper = ref(null)
 const currentPaperDetail = ref(null)
 const questionTypes = ref([])
 const difficultyLevels = ref([])
+
+// 搜索和筛选条件
+const searchTitle = ref('')
+const filterStudent = ref('')
+
+// 分页配置
+const pagination = reactive({
+  currentPage: 1,
+  pageSize: 50,
+  total: 0
+})
 
 const paperFormRef = ref()
 
@@ -288,6 +348,13 @@ const paperRules = {
 const classList = computed(() => {
   const classes = new Set(students.value.map(student => student.userClass).filter(Boolean))
   return Array.from(classes)
+})
+
+// 当前页显示的试卷
+const currentPagePapers = computed(() => {
+  const start = (pagination.currentPage - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
+  return filteredPapers.value.slice(start, end)
 })
 
 // 处理发布范围类型变化
@@ -350,13 +417,51 @@ const loadPapers = async () => {
   try {
     loading.value = true
     const response = await paperApi.getAllPapers()
-    papers.value = response.data || []
+    // 按ID排序
+    allPapers.value = (response.data || []).sort((a, b) => a.id - b.id)
+
+    // 初始化筛选后的数据
+    applyFilters()
   } catch (error) {
     ElMessage.error('加载试卷列表失败: ' + error.message)
-    papers.value = []
+    allPapers.value = []
+    filteredPapers.value = []
   } finally {
     loading.value = false
   }
+}
+
+// 应用筛选条件
+const applyFilters = () => {
+  let filtered = [...allPapers.value]
+
+  // 试卷标题搜索
+  if (searchTitle.value) {
+    filtered = filtered.filter(paper =>
+      paper.title && paper.title.toLowerCase().includes(searchTitle.value.toLowerCase())
+    )
+  }
+
+  // 学生筛选
+  if (filterStudent.value) {
+    filtered = filtered.filter(paper => paper.studentId == filterStudent.value)
+  }
+
+  filteredPapers.value = filtered
+  pagination.total = filteredPapers.value.length
+  pagination.currentPage = 1 // 重置到第一页
+}
+
+// 处理搜索
+const handleSearch = () => {
+  applyFilters()
+}
+
+// 重置搜索
+const resetSearch = () => {
+  searchTitle.value = ''
+  filterStudent.value = ''
+  applyFilters()
 }
 
 // 加载学生列表
@@ -373,7 +478,8 @@ const loadStudents = async () => {
 const loadAvailableQuestions = async () => {
   try {
     const response = await questionApi.getAllQuestions()
-    availableQuestions.value = response.data || []
+    // 按ID排序
+    availableQuestions.value = (response.data || []).sort((a, b) => a.id - b.id)
 
     // 如果题目没有答案，尝试通过详情API获取完整信息
     if (availableQuestions.value.length > 0 && !availableQuestions.value[0].answers) {
@@ -557,6 +663,17 @@ const getStudentName = (studentId) => {
   return student ? student.username : '未知'
 }
 
+// 分页大小改变
+const handleSizeChange = (newSize) => {
+  pagination.pageSize = newSize
+  pagination.currentPage = 1
+}
+
+// 当前页改变
+const handleCurrentChange = (newPage) => {
+  pagination.currentPage = newPage
+}
+
 // 使用共享工具库提供的标签样式函数
 
 // 格式化日期
@@ -608,6 +725,24 @@ onMounted(() => {
   color: #666;
 }
 
+.filtered-count {
+  color: #409eff;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+/* 筛选工具栏 */
+.filter-toolbar {
+  margin-bottom: 15px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border: 1px solid #ebeef5;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
 .questions-selector {
   border: 1px solid #e4e7ed;
   border-radius: 4px;
@@ -641,6 +776,25 @@ onMounted(() => {
   margin-left: 8px;
 }
 
+/* 添加题目序号样式 */
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.question-index {
+  font-weight: bold;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.question-id {
+  font-size: 12px;
+  color: #909399;
+}
+
 .question-text {
   display: block;
   margin-bottom: 4px;
@@ -651,6 +805,7 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .answer {
@@ -682,5 +837,13 @@ onMounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #666;
+}
+
+/* 分页样式 */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 20px 0;
 }
 </style>
