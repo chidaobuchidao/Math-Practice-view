@@ -30,14 +30,8 @@
         <el-col :span="6">
           <el-statistic title="错题总数" :value="wrongQuestions.length" />
         </el-col>
-        <el-col :span="6">
-          <el-statistic title="加减运算错题" :value="getTypeCount('AddAndSub')" />
-        </el-col>
-        <el-col :span="6">
-          <el-statistic title="乘除运算错题" :value="getTypeCount('MulAndDiv')" />
-        </el-col>
-        <el-col :span="6">
-          <el-statistic title="混合运算错题" :value="getTypeCount('Mixed')" />
+        <el-col :span="6" v-for="stat in typeStats" :key="stat.typeKey">
+          <el-statistic :title="`${stat.typeName}错题`" :value="stat.count" />
         </el-col>
       </el-row>
 
@@ -49,7 +43,8 @@
           </div>
         </template>
         <div ref="chartRef" style="height: 300px; position: relative;">
-          <div v-if="wrongQuestions.length === 0" style="position: absolute; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #909399; top: 0; left: 0; z-index: 10; background: white;">
+          <div v-if="wrongQuestions.length === 0"
+            style="position: absolute; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #909399; top: 0; left: 0; z-index: 10; background: white;">
             暂无错题数据
           </div>
         </div>
@@ -62,14 +57,11 @@
             <span>错题列表</span>
             <div class="header-actions">
               <el-select v-model="filterType" placeholder="按类型筛选" clearable style="width: 120px; margin-right: 10px;">
-                <el-option label="加减运算" value="AddAndSub" />
-                <el-option label="乘除运算" value="MulAndDiv" />
-                <el-option label="混合运算" value="Mixed" />
+                <el-option v-for="type in uniqueTypes" :key="type" :label="getTypeText(type)" :value="type" />
               </el-select>
               <el-select v-model="filterDifficulty" placeholder="按难度筛选" clearable style="width: 120px;">
-                <el-option label="简单" value="easy" />
-                <el-option label="中等" value="medium" />
-                <el-option label="困难" value="hard" />
+                <el-option v-for="diff in uniqueDifficulties" :key="diff" :label="getDifficultyText(diff)"
+                  :value="diff" />
               </el-select>
             </div>
           </div>
@@ -80,16 +72,23 @@
           <el-table-column label="题目内容">
             <template #default="{ row }">
               <div class="question-content">
-                <div class="question-text">{{ row.content }}</div>
+                <div class="question-text" v-html="row.content"></div>
+                <!-- 显示题目图片 -->
+                <div v-if="row.images && row.images.length > 0" class="question-images-list">
+                  <img v-for="(img, idx) in row.images" :key="idx" 
+                       :src="getImageUrl(img.imagePath || img.image_path)" 
+                       class="question-image-thumb" 
+                       @click="previewImage(img.imagePath || img.image_path)" />
+                </div>
                 <div class="question-meta">
-                  <el-tag size="small" :type="getTypeTagType(row.type)">
-                    {{ getTypeText(row.type) }}
+                  <el-tag size="small" :type="getTypeTagType(row.type_id || row.type)">
+                    {{ getTypeText(row.type_id || row.type) }}
                   </el-tag>
-                  <el-tag size="small" :type="getDifficultyTagType(row.difficulty)">
-                    {{ getDifficultyText(row.difficulty) }}
+                  <el-tag size="small" :type="getDifficultyTagType(row.difficulty_id || row.difficulty)">
+                    {{ getDifficultyText(row.difficulty_id || row.difficulty) }}
                   </el-tag>
-                  <span class="wrong-answer">我的答案: {{ row.wrong_answer || '未作答' }}</span>
-                  <span class="correct-answer">正确答案: {{ row.answer }}</span>
+                  <span class="wrong-answer">我的答案: {{ formatStudentAnswerWithContent(row) }}</span>
+                  <span class="correct-answer">正确答案: {{ formatCorrectAnswerWithContent(row) }}</span>
                   <span class="record-time">记录时间: {{ formatDate(row.created_at) }}</span>
                 </div>
               </div>
@@ -100,7 +99,7 @@
               <el-button type="primary" size="small" @click="reviewQuestion(row)">
                 复习
               </el-button>
-              <el-button type="danger" size="small" @click="handleRemoveWrongQuestion(row.question_id)">
+              <el-button type="danger" size="small" @click="handleRemoveWrongQuestion(row.question_id || row.id)">
                 移除
               </el-button>
             </template>
@@ -116,58 +115,91 @@
       <el-dialog v-model="showReviewDialog" :title="`复习题目 - 第${reviewQuestionIndex + 1}题`" width="600px">
         <div v-if="currentReviewQuestion" class="review-content">
           <div class="question-header">
-            <el-tag size="small" :type="getTypeTagType(currentReviewQuestion.type)">
-              {{ getTypeText(currentReviewQuestion.type) }}
+            <el-tag size="small" :type="getTypeTagType(currentReviewQuestion.type_id || currentReviewQuestion.type)">
+              {{ getTypeText(currentReviewQuestion.type_id || currentReviewQuestion.type) }}
             </el-tag>
-            <el-tag size="small" :type="getDifficultyTagType(currentReviewQuestion.difficulty)">
-              {{ getDifficultyText(currentReviewQuestion.difficulty) }}
+            <el-tag size="small"
+              :type="getDifficultyTagType(currentReviewQuestion.difficulty_id || currentReviewQuestion.difficulty)">
+              {{ getDifficultyText(currentReviewQuestion.difficulty_id || currentReviewQuestion.difficulty) }}
             </el-tag>
           </div>
-          
+
           <div class="question-text" style="font-size: 16px; margin: 20px 0;">
             {{ currentReviewQuestion.content }}
           </div>
 
-          <div class="answer-input">
-            <el-input-number 
-              v-model="reviewAnswer" 
-              :precision="2"
-              placeholder="请输入你的答案" 
-              style="width: 200px;"
-              :controls="false" />
+          <!-- 显示题目图片 -->
+          <div v-if="currentReviewQuestion.images && currentReviewQuestion.images.length > 0" class="question-images" style="margin: 15px 0;">
+            <img v-for="(img, idx) in currentReviewQuestion.images" :key="idx" 
+                 :src="getImageUrl(img.imagePath)" 
+                 class="question-image" 
+                 @click="previewImage(img.imagePath)" />
+          </div>
+
+          <!-- 选择题：显示选项 -->
+          <div v-if="isChoiceQuestion(currentReviewQuestion)" class="choice-options-section" style="margin: 20px 0;">
+            <div class="options-label" style="font-weight: bold; margin-bottom: 10px;">选项：</div>
+            <div v-for="option in getSortedOptions(currentReviewQuestion.options)" :key="option.optionKey" 
+                 class="option-item" 
+                 :class="{ 'correct-option': isCorrectOption(option.optionKey, currentReviewQuestion) }"
+                 style="padding: 8px; margin: 5px 0; border: 1px solid #e4e7ed; border-radius: 4px;">
+              <span class="option-key" style="font-weight: bold; margin-right: 8px;">{{ option.optionKey }}.</span>
+              <span v-html="option.content"></span>
+            </div>
+          </div>
+
+          <div class="answer-input" style="margin: 20px 0;">
+            <el-input v-if="!isChoiceQuestion(currentReviewQuestion)" 
+                      v-model="reviewAnswer" 
+                      placeholder="请输入你的答案" 
+                      style="width: 200px;" />
+            <!-- 选择题：使用下拉选择 -->
+            <el-select v-else 
+                       v-model="reviewAnswer" 
+                       placeholder="请选择答案" 
+                       style="width: 200px;">
+              <el-option 
+                v-for="option in getSortedOptions(currentReviewQuestion.options)" 
+                :key="option.optionKey" 
+                :label="`${option.optionKey}. ${option.content}`" 
+                :value="option.optionKey" />
+            </el-select>
           </div>
 
           <div class="review-actions" style="margin-top: 20px;">
-            <el-button @click="checkAnswer" type="primary" :disabled="!reviewAnswer">
+            <el-button @click="checkAnswer" type="primary" :disabled="!reviewAnswer || reviewAnswer.trim() === ''">
               检查答案
             </el-button>
-            <el-button @click="showAnswer" type="link">
+            <el-button @click="showAnswer" type="text">
               显示答案
             </el-button>
           </div>
 
           <div v-if="showResult" class="result-section" style="margin-top: 20px;">
-            <el-alert 
-              :title="resultMessage" 
-              :type="isAnswerCorrect ? 'success' : 'error'"
-              :closable="false"
-              show-icon>
+            <el-alert :title="resultMessage" :type="isAnswerCorrect ? 'success' : 'error'" :closable="false" show-icon>
             </el-alert>
             <div v-if="!isAnswerCorrect" style="margin-top: 10px;">
-              <span style="color: #67c23a;">正确答案: {{ currentReviewQuestion.answer }}</span>
+              <div style="color: #67c23a; font-weight: bold; margin-bottom: 5px;">
+                正确答案: {{ formatCorrectAnswer(currentReviewQuestion.correct_answer || currentReviewQuestion.answer) }}
+              </div>
+              <!-- 选择题：显示正确答案对应的选项内容 -->
+              <div v-if="isChoiceQuestion(currentReviewQuestion)" style="margin-top: 8px; padding: 8px; background: #f0f9ff; border-radius: 4px;">
+                <div v-for="answerKey in getCorrectAnswerKeys(currentReviewQuestion)" :key="answerKey" style="margin: 5px 0;">
+                  <strong>{{ answerKey }}.</strong> {{ getOptionContent(answerKey, currentReviewQuestion.options) }}
+                </div>
+              </div>
+            </div>
+            <div v-if="currentReviewQuestion.analysis"
+              style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+              <strong>解析:</strong> {{ currentReviewQuestion.analysis }}
             </div>
           </div>
         </div>
 
         <template #footer>
           <el-button @click="showReviewDialog = false">关闭</el-button>
-          <el-button 
-            v-if="reviewQuestions.length > 1"
-            @click="nextQuestion" 
-            type="primary"
-            :disabled="!showResult">
-            {{ reviewQuestionIndex < reviewQuestions.length - 1 ? '下一题' : '完成复习' }}
-          </el-button>
+          <el-button v-if="reviewQuestions.length > 1" @click="nextQuestion" type="primary" :disabled="!showResult">
+            {{ reviewQuestionIndex < reviewQuestions.length - 1 ? '下一题' : '完成复习' }} </el-button>
         </template>
       </el-dialog>
     </div>
@@ -181,6 +213,9 @@ import { Delete, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { wrongQuestionApi } from '@/api/wrongQuestion'
 import { paperApi } from '@/api/paper'
+import { questionApi } from '@/api/question'
+import request from '@/utils/request'
+import { getTypeName as utilGetTypeName, getTypeTagType as utilGetTypeTagType, getDifficultyName as utilGetDifficultyName, getDifficultyTagType as utilGetDifficultyTagType, getTypeTextByKey, getTypeTagTypeByKey, getDifficultyTextByKey, getDifficultyTagTypeByKey } from '@/utils/type'
 
 const props = defineProps({
   studentId: {
@@ -205,7 +240,7 @@ const showReviewDialog = ref(false)
 const reviewQuestions = ref([])
 const reviewQuestionIndex = ref(0)
 const currentReviewQuestion = ref(null)
-const reviewAnswer = ref(null)
+const reviewAnswer = ref('')
 const showResult = ref(false)
 const isAnswerCorrect = ref(false)
 const resultMessage = ref('')
@@ -219,15 +254,78 @@ const isStudentIdValid = computed(() => {
 const filteredWrongQuestions = computed(() => {
   let filtered = wrongQuestions.value
 
-  if (filterType.value) {
-    filtered = filtered.filter(q => q.type === filterType.value)
+  if (filterType.value !== null && filterType.value !== undefined && filterType.value !== '') {
+    filtered = filtered.filter(q => {
+      const qTypeKey = q.type_id || q.type
+      // 直接比较 typeKey（数字或字符串）
+      if (qTypeKey === filterType.value) {
+        return true
+      }
+      // 如果 filterType.value 是数字或字符串，都能正确匹配
+      return false
+    })
   }
 
-  if (filterDifficulty.value) {
-    filtered = filtered.filter(q => q.difficulty === filterDifficulty.value)
+  if (filterDifficulty.value !== null && filterDifficulty.value !== undefined && filterDifficulty.value !== '') {
+    filtered = filtered.filter(q => {
+      const qDiffKey = q.difficulty_id || q.difficulty
+      // 直接比较 diffKey（数字或字符串）
+      if (qDiffKey === filterDifficulty.value) {
+        return true
+      }
+      return false
+    })
   }
 
   return filtered
+})
+
+// 获取所有唯一的类型
+const uniqueTypes = computed(() => {
+  const types = new Set()
+  wrongQuestions.value.forEach(q => {
+    const typeValue = q.type_id || q.type
+    if (typeValue !== null && typeValue !== undefined) {
+      types.add(typeValue)
+    }
+  })
+  return Array.from(types).sort()
+})
+
+// 获取所有唯一的难度
+const uniqueDifficulties = computed(() => {
+  const difficulties = new Set()
+  wrongQuestions.value.forEach(q => {
+    const diffValue = q.difficulty_id || q.difficulty
+    if (diffValue !== null && diffValue !== undefined) {
+      difficulties.add(diffValue)
+    }
+  })
+  return Array.from(difficulties).sort()
+})
+
+// 类型统计信息（用于统计栏）
+const typeStats = computed(() => {
+  const stats = {}
+  wrongQuestions.value.forEach(q => {
+    const typeKey = q.type_id || q.type
+    if (typeKey !== null && typeKey !== undefined) {
+      if (!stats[typeKey]) {
+        stats[typeKey] = {
+          typeKey,
+          typeName: getTypeText(typeKey),
+          count: 0
+        }
+      }
+      stats[typeKey].count++
+    }
+  })
+  return Object.values(stats).sort((a, b) => {
+    if (typeof a.typeKey === 'number' && typeof b.typeKey === 'number') {
+      return a.typeKey - b.typeKey
+    }
+    return String(a.typeKey).localeCompare(String(b.typeKey))
+  })
 })
 
 // 加载错题列表
@@ -239,10 +337,36 @@ const loadWrongQuestions = async () => {
 
   try {
     loading.value = true
-    
+
     const response = await wrongQuestionApi.getWrongQuestions(props.studentId)
     wrongQuestions.value = response.data || []
-       
+
+    // 为选择题加载选项和图片（如果后端没有返回）
+    for (const question of wrongQuestions.value) {
+      const typeId = question.type_id || question.type
+      const needsOptions = (typeId === 1 || typeId === 2) && (!question.options || question.options.length === 0)
+      const needsImages = !question.images || question.images.length === 0
+      
+      // 如果需要加载选项或图片，则获取题目详情
+      if (needsOptions || needsImages) {
+        try {
+          const detailResponse = await questionApi.getQuestionById(question.question_id || question.id)
+          if (detailResponse.data) {
+            if (needsOptions) {
+              question.options = detailResponse.data.options || []
+            }
+            if (needsImages) {
+              question.images = detailResponse.data.images || []
+            }
+          }
+        } catch (error) {
+          console.warn('加载题目详情失败:', error)
+        }
+      }
+    }
+
+    console.log('加载的错题数据:', wrongQuestions.value)
+
     // 数据更新会自动触发 watch，从而调用 forceRefreshChart()
   } catch (error) {
     ElMessage.error('加载错题列表失败: ' + (error.message || '未知错误'))
@@ -252,6 +376,124 @@ const loadWrongQuestions = async () => {
   }
 }
 
+// 格式化学生答案显示（带选项内容）
+const formatStudentAnswerWithContent = (question) => {
+  const answer = question.wrong_answer
+  if (answer === null || answer === undefined || answer === '') return '未作答'
+  
+  // 如果是选择题，显示选项键和内容
+  if (isChoiceQuestion(question) && question.options && question.options.length > 0) {
+    const answerKeys = Array.isArray(answer) ? answer : (typeof answer === 'string' && answer.includes(',') ? answer.split(',').map(s => s.trim()) : [String(answer)])
+    const answerTexts = answerKeys.map(key => {
+      const option = question.options.find(opt => (opt.optionKey || opt.option_key) === key)
+      return option ? `${key}. ${option.content}` : key
+    })
+    return answerTexts.join(', ')
+  }
+  
+  return String(answer)
+}
+
+// 格式化正确答案显示（带选项内容）
+const formatCorrectAnswerWithContent = (question) => {
+  const answer = question.correct_answer || question.answer
+  if (answer === null || answer === undefined || answer === '') return '无答案'
+  
+  // 如果是选择题，显示选项键和内容
+  if (isChoiceQuestion(question) && question.options && question.options.length > 0) {
+    const answerKeys = Array.isArray(answer) ? answer : (typeof answer === 'string' && answer.includes(',') ? answer.split(',').map(s => s.trim()) : [String(answer)])
+    const answerTexts = answerKeys.map(key => {
+      const option = question.options.find(opt => (opt.optionKey || opt.option_key) === key)
+      return option ? `${key}. ${option.content}` : key
+    })
+    return answerTexts.join(', ')
+  }
+  
+  // 如果是数组，转换为逗号分隔的字符串
+  if (Array.isArray(answer)) {
+    return answer.join(', ')
+  }
+  return String(answer)
+}
+
+// 格式化学生答案显示（简单版本，用于其他地方）
+const formatStudentAnswer = (answer) => {
+  if (answer === null || answer === undefined || answer === '') return '未作答'
+  return String(answer)
+}
+
+// 格式化正确答案显示（简单版本，用于其他地方）
+const formatCorrectAnswer = (answer) => {
+  if (answer === null || answer === undefined || answer === '') return '无答案'
+  if (Array.isArray(answer)) {
+    return answer.join(', ')
+  }
+  return String(answer)
+}
+
+// 解析答案（支持多种格式：数字、分数、文本等）
+// 返回字符串格式，用于比较
+const parseAnswer = (answer) => {
+  if (answer === null || answer === undefined || answer === '') return null
+
+  // 如果是数字，转换为字符串
+  if (typeof answer === 'number') {
+    return String(answer)
+  }
+
+  // 如果是字符串，直接返回（去除首尾空格）
+  if (typeof answer === 'string') {
+    return answer.trim()
+  }
+
+  // 其他类型转换为字符串
+  return String(answer)
+}
+
+// 比较答案（支持字符串、数字、分数等多种格式）
+const compareAnswers = (studentAnswer, correctAnswer) => {
+  if (!studentAnswer || !correctAnswer) return false
+
+  // 转换为字符串并去除首尾空格
+  const studentStr = String(studentAnswer).trim()
+  const correctStr = String(correctAnswer).trim()
+
+  // 精确匹配（区分大小写）
+  if (studentStr === correctStr) {
+    return true
+  }
+
+  // 对于数字答案，进行数值比较（考虑浮点数精度）
+  const studentNum = parseFloat(studentStr)
+  const correctNum = parseFloat(correctStr)
+  if (!isNaN(studentNum) && !isNaN(correctNum)) {
+    // 如果都是有效数字，进行数值比较（考虑精度）
+    return Math.abs(studentNum - correctNum) < 0.01
+  }
+
+  // 对于分数格式，进行分数比较
+  if (studentStr.includes('/') && correctStr.includes('/')) {
+    const studentParts = studentStr.split('/')
+    const correctParts = correctStr.split('/')
+    if (studentParts.length === 2 && correctParts.length === 2) {
+      const studentNum = parseFloat(studentParts[0])
+      const studentDen = parseFloat(studentParts[1])
+      const correctNum = parseFloat(correctParts[0])
+      const correctDen = parseFloat(correctParts[1])
+      if (!isNaN(studentNum) && !isNaN(studentDen) && !isNaN(correctNum) && !isNaN(correctDen) && studentDen !== 0 && correctDen !== 0) {
+        return Math.abs(studentNum / studentDen - correctNum / correctDen) < 0.01
+      }
+    }
+  }
+
+  // 不区分大小写的字符串比较
+  if (studentStr.toLowerCase() === correctStr.toLowerCase()) {
+    return true
+  }
+
+  return false
+}
+
 // 强制刷新图表（处理容器被销毁重建的情况）
 const forceRefreshChart = () => {
   // 如果没有错题数据，不需要初始化图表
@@ -259,7 +501,7 @@ const forceRefreshChart = () => {
     console.log('没有错题数据，跳过图表初始化')
     return
   }
-  
+
   // 如果实例存在，先销毁
   if (chartInstance) {
     try {
@@ -270,9 +512,8 @@ const forceRefreshChart = () => {
       console.error('销毁图表失败:', error)
     }
   }
-  
+
   // 延迟后重新初始化（确保 DOM 已挂载并计算好尺寸）
-  // 使用更长的延迟确保布局完成
   nextTick(() => {
     setTimeout(() => {
       console.log('准备调用 updateChart，chartRef 是否存在:', !!chartRef.value)
@@ -284,12 +525,12 @@ const forceRefreshChart = () => {
 // 更新饼图
 const updateChart = () => {
   console.log('chartRef 尺寸 - height:', chartRef.value?.offsetHeight, 'width:', chartRef.value?.offsetWidth)
-  
+
   if (!chartRef.value) {
     console.warn('chartRef.value 不存在，跳过图表更新')
     return
   }
-  
+
   // 检查 DOM 是否可见 - 如果尺寸为 0，延迟重试
   if (chartRef.value.offsetHeight === 0 || chartRef.value.offsetWidth === 0) {
     setTimeout(() => {
@@ -297,7 +538,7 @@ const updateChart = () => {
     }, 200)
     return
   }
-  
+
   // 如果实例存在但 DOM 容器不同（容器被重新创建），需要重新初始化
   if (chartInstance && chartInstance.getDom() !== chartRef.value) {
     try {
@@ -309,7 +550,7 @@ const updateChart = () => {
       chartInstance = null
     }
   }
-  
+
   if (!chartInstance) {
     try {
       chartInstance = echarts.init(chartRef.value)
@@ -320,17 +561,15 @@ const updateChart = () => {
     }
   }
 
-  // 统计各类型错题数量
-  const typeData = {
-    'AddAndSub': { name: '加减运算', value: 0 },
-    'MulAndDiv': { name: '乘除运算', value: 0 },
-    'Mixed': { name: '混合运算', value: 0 }
-  }
+  // 统计各类型错题数量（完全动态）
+  const typeData = {}
 
   wrongQuestions.value.forEach(question => {
-    if (typeData[question.type]) {
-      typeData[question.type].value++
+    const typeText = getTypeText(question.type_id || question.type)
+    if (!typeData[typeText]) {
+      typeData[typeText] = { name: typeText, value: 0 }
     }
+    typeData[typeText].value++
   })
 
   const chartData = Object.values(typeData).filter(item => item.value > 0)
@@ -452,7 +691,7 @@ const generatePracticePaper = async () => {
 
     generating.value = true
 
-    const questionIds = wrongQuestions.value.map(q => q.question_id)
+    const questionIds = wrongQuestions.value.map(q => q.question_id || q.id)
     const paperData = {
       title: `错题专项练习 - ${formatDate(new Date())}`,
       studentId: props.studentId,
@@ -461,10 +700,10 @@ const generatePracticePaper = async () => {
 
     await paperApi.generatePaper(paperData)
     ElMessage.success('练习试卷生成成功！')
-    
+
     // 通知父组件
     emit('practice-generated')
-    
+
   } catch (error) {
     ElMessage.error('生成练习试卷失败: ' + error.message)
   } finally {
@@ -472,42 +711,121 @@ const generatePracticePaper = async () => {
   }
 }
 
+// 判断是否为选择题
+const isChoiceQuestion = (question) => {
+  const typeId = question.type_id || question.type
+  return typeId === 1 || typeId === 2
+}
+
+// 获取排序后的选项
+const getSortedOptions = (options) => {
+  if (!options || !Array.isArray(options)) return []
+  return [...options].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+}
+
+// 判断是否为正确答案选项
+const isCorrectOption = (optionKey, question) => {
+  const correctAnswer = question.correct_answer || question.answer
+  if (!correctAnswer) return false
+  if (Array.isArray(correctAnswer)) {
+    return correctAnswer.includes(optionKey)
+  }
+  return String(correctAnswer) === String(optionKey)
+}
+
+// 获取正确答案的选项键列表
+const getCorrectAnswerKeys = (question) => {
+  const correctAnswer = question.correct_answer || question.answer
+  if (!correctAnswer) return []
+  if (Array.isArray(correctAnswer)) {
+    return correctAnswer
+  }
+  if (typeof correctAnswer === 'string' && correctAnswer.includes(',')) {
+    return correctAnswer.split(',').map(s => s.trim())
+  }
+  return [String(correctAnswer)]
+}
+
+// 根据选项键获取选项内容
+const getOptionContent = (optionKey, options) => {
+  if (!options || !Array.isArray(options)) return ''
+  const option = options.find(opt => opt.optionKey === optionKey || opt.option_key === optionKey)
+  return option?.content || ''
+}
+
+// 获取图片完整URL
+const getImageUrl = (path) => {
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${request.defaults.baseURL}${path}`
+}
+
+// 预览图片
+const previewImage = (path) => {
+  window.open(getImageUrl(path), '_blank')
+}
+
 // 复习题目
-const reviewQuestion = (question) => {
+const reviewQuestion = async (question) => {
+  // 如果是选择题且没有选项数据，加载题目详情
+  if (isChoiceQuestion(question) && (!question.options || question.options.length === 0)) {
+    try {
+      const detailResponse = await questionApi.getQuestionById(question.question_id || question.id)
+      if (detailResponse.data) {
+        Object.assign(question, detailResponse.data)
+      }
+    } catch (error) {
+      console.warn('加载题目详情失败:', error)
+    }
+  }
+  
   reviewQuestions.value = [question]
   reviewQuestionIndex.value = 0
   currentReviewQuestion.value = question
-  reviewAnswer.value = null
+  reviewAnswer.value = ''
   showResult.value = false
+  isAnswerCorrect.value = false
   showReviewDialog.value = true
 }
 
 // 检查答案
 const checkAnswer = () => {
-  if (reviewAnswer.value === null || reviewAnswer.value === undefined) {
+  if (!reviewAnswer.value || reviewAnswer.value.trim() === '') {
     ElMessage.warning('请输入答案')
     return
   }
 
-  const correctAnswer = currentReviewQuestion.value.answer
-  isAnswerCorrect.value = Math.abs(reviewAnswer.value - correctAnswer) < 0.01
-  
+  // 获取正确答案
+  const correctAnswer = currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer
+
+  if (!correctAnswer) {
+    ElMessage.error('无法获取正确答案')
+    return
+  }
+
+  // 使用新的比较函数进行答案比较
+  isAnswerCorrect.value = compareAnswers(reviewAnswer.value, correctAnswer)
+
   if (isAnswerCorrect.value) {
     resultMessage.value = '回答正确！太棒了！'
     // 如果回答正确，自动从错题集中移除
     setTimeout(() => {
-      handleRemoveWrongQuestion(currentReviewQuestion.value.question_id)
-    }, 1000)
+      handleRemoveWrongQuestion(currentReviewQuestion.value.question_id || currentReviewQuestion.value.id)
+      showReviewDialog.value = false
+    }, 1500)
   } else {
     resultMessage.value = '回答错误，再想想看！'
   }
-  
+
   showResult.value = true
 }
 
 // 显示答案
 const showAnswer = () => {
-  reviewAnswer.value = currentReviewQuestion.value.answer
+  const correctAnswer = currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer
+  if (correctAnswer !== null && correctAnswer !== undefined) {
+    // 直接使用字符串格式的答案
+    reviewAnswer.value = String(correctAnswer)
+  }
   isAnswerCorrect.value = false
   resultMessage.value = '这是正确答案，请记住它！'
   showResult.value = true
@@ -518,8 +836,9 @@ const nextQuestion = () => {
   if (reviewQuestionIndex.value < reviewQuestions.value.length - 1) {
     reviewQuestionIndex.value++
     currentReviewQuestion.value = reviewQuestions.value[reviewQuestionIndex.value]
-    reviewAnswer.value = null
+    reviewAnswer.value = ''
     showResult.value = false
+    isAnswerCorrect.value = false
   } else {
     showReviewDialog.value = false
     ElMessage.success('复习完成！')
@@ -528,44 +847,55 @@ const nextQuestion = () => {
 
 // 统计各类型错题数量
 const getTypeCount = (type) => {
-  return wrongQuestions.value.filter(q => q.type === type).length
+  return wrongQuestions.value.filter(q => {
+    const typeText = getTypeText(q.type_id || q.type)
+    return typeText === type
+  }).length
 }
 
-// 工具函数
-const getTypeText = (type) => {
-  const map = {
-    'AddAndSub': '加减运算',
-    'MulAndDiv': '乘除运算',
-    'Mixed': '混合运算'
+// 工具函数 - 智能映射，支持数字 id 和字符串 key
+// 智能类型名称映射：支持数字 id 和字符串 key，统一委托到 utils/type.js
+const getTypeText = (input) => {
+  if (input === null || input === undefined || input === '') return '未知类型'
+  if (typeof input === 'number') return utilGetTypeName(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetTypeName(parseInt(input))
+    return getTypeTextByKey(input)
   }
-  return map[type] || type
+  return String(input)
 }
 
-const getTypeTagType = (type) => {
-  const map = {
-    'AddAndSub': 'success',
-    'MulAndDiv': 'primary',
-    'Mixed': 'warning'
+// 智能类型标签样式映射：支持数字 id 和字符串 key
+const getTypeTagType = (input) => {
+  if (input === null || input === undefined || input === '') return 'info'
+  if (typeof input === 'number') return utilGetTypeTagType(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetTypeTagType(parseInt(input))
+    return getTypeTagTypeByKey(input)
   }
-  return map[type] || 'info'
+  return 'info'
 }
 
-const getDifficultyText = (difficulty) => {
-  const map = {
-    'easy': '简单',
-    'medium': '中等',
-    'hard': '困难'
+// 智能难度名称映射：支持数字 id 和字符串 key
+const getDifficultyText = (input) => {
+  if (input === null || input === undefined || input === '') return '未知难度'
+  if (typeof input === 'number') return utilGetDifficultyName(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetDifficultyName(parseInt(input))
+    return getDifficultyTextByKey(input)
   }
-  return map[difficulty] || difficulty
+  return String(input)
 }
 
-const getDifficultyTagType = (difficulty) => {
-  const map = {
-    'easy': 'success',
-    'medium': 'warning',
-    'hard': 'danger'
+// 智能难度标签样式映射：支持数字 id 和字符串 key
+const getDifficultyTagType = (input) => {
+  if (input === null || input === undefined || input === '') return 'info'
+  if (typeof input === 'number') return utilGetDifficultyTagType(input)
+  if (typeof input === 'string') {
+    if (/^\d+$/.test(input)) return utilGetDifficultyTagType(parseInt(input))
+    return getDifficultyTagTypeByKey(input)
   }
-  return map[difficulty] || 'info'
+  return 'info'
 }
 
 // 格式化日期
@@ -638,10 +968,10 @@ watch(
 
 onMounted(() => {
   console.log('WrongQuestions 组件已挂载, studentId:', props.studentId, '已有错题数:', wrongQuestions.value.length)
-  
+
   // 监听窗口大小变化
   window.addEventListener('resize', handleWindowResize)
-  
+
   // 如果 studentId 有效
   if (isStudentIdValid.value) {
     // 如果已经有错题数据（从缓存），立即初始化图表
@@ -697,7 +1027,7 @@ onUnmounted(() => {
   console.log('WrongQuestions 组件卸载')
   // 移除 resize 事件监听
   window.removeEventListener('resize', handleWindowResize)
-  
+
   // 销毁图表实例
   if (chartInstance) {
     try {
@@ -709,7 +1039,7 @@ onUnmounted(() => {
       chartInstance = null
     }
   }
-  
+
   // 清空数据，确保重新挂载时可以重新加载
   // 注意：不要清空 wrongQuestions，因为如果使用了 keep-alive 会需要它
 })
@@ -808,5 +1138,67 @@ onUnmounted(() => {
   padding: 15px;
   background-color: #f8f9fa;
   border-radius: 8px;
+}
+
+.choice-options-section {
+  margin: 20px 0;
+}
+
+.option-item {
+  padding: 8px;
+  margin: 5px 0;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.option-item:hover {
+  background-color: #f5f7fa;
+}
+
+.option-item.correct-option {
+  background-color: #f0f9ff;
+  border-color: #67c23a;
+}
+
+.question-images {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 15px 0;
+}
+
+.question-image {
+  max-width: 300px;
+  max-height: 300px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.question-image:hover {
+  border-color: #409eff;
+}
+
+.question-images-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.question-image-thumb {
+  max-width: 150px;
+  max-height: 150px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  object-fit: contain;
+}
+
+.question-image-thumb:hover {
+  border-color: #409eff;
+  transform: scale(1.05);
+  transition: all 0.3s;
 }
 </style>

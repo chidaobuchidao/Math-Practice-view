@@ -2,11 +2,42 @@
   <div class="paper-generation">
     <div class="toolbar">
       <h3>试卷生成</h3>
-      <el-button type="primary" @click="showGenerateDialog = true">
+    </div>
+
+    <!-- 筛选工具栏 -->
+    <div class="filter-toolbar">
+      <el-button type="primary" @click="showGenerateDialog = true" style="margin-right: 20px;">
         <el-icon>
           <Plus />
         </el-icon>
         生成新试卷
+      </el-button>
+      <div class="filter-placeholder"></div>
+      <el-input v-model="searchTitle" placeholder="搜索试卷标题" clearable style="width: 200px; margin-right: 10px;"
+        @clear="handleSearch" @keyup.enter="handleSearch">
+        <template #prefix>
+          <el-icon>
+            <Search />
+          </el-icon>
+        </template>
+      </el-input>
+
+      <el-select v-model="filterStudent" placeholder="选择学生" clearable style="width: 150px; margin-right: 10px;">
+        <el-option label="全部学生" value=""></el-option>
+        <el-option v-for="student in students" :key="student.id" :label="student.username" :value="student.id" />
+      </el-select>
+
+      <el-button type="primary" @click="handleSearch">
+        <el-icon>
+          <Search />
+        </el-icon>
+        搜索
+      </el-button>
+      <el-button @click="resetSearch">
+        <el-icon>
+          <Refresh />
+        </el-icon>
+        重置
       </el-button>
     </div>
 
@@ -16,14 +47,17 @@
         <div class="card-header">
           <span>已生成的试卷</span>
           <div class="header-stats">
-            共 <el-tag type="primary">{{ papers.length }}</el-tag> 份试卷
+            共 <el-tag type="primary">{{ pagination.total }}</el-tag> 份试卷
+            <span v-if="filteredPapers.length !== allPapers.length" class="filtered-count">
+              (筛选出 {{ filteredPapers.length }} 份)
+            </span>
           </div>
         </div>
       </template>
 
-      <el-table :data="papers" v-loading="loading" style="width: 100%">
+      <el-table :data="currentPagePapers" v-loading="loading" style="width: 100%">
         <el-table-column prop="id" label="试卷ID" width="100" align="center" />
-        <el-table-column prop="title" label="试卷标题" />
+        <el-table-column prop="title" label="试卷标题" min-width="200" />
         <el-table-column prop="studentId" label="学生ID" width="100" align="center" />
         <el-table-column label="学生姓名" width="120">
           <template #default="{ row }">
@@ -33,8 +67,8 @@
         <el-table-column prop="totalQuestions" label="题目数量" width="100" align="center" />
         <el-table-column prop="score" label="得分" width="100" align="center">
           <template #default="{ row }">
-            <span v-if="row.score !== null && row.score !== undefined && row.score >= 0">
-              {{ row.score }} 分
+            <span v-if="row.score !== null && row.score !== undefined">
+              {{ row.score.toFixed(1) }} 分
             </span>
             <el-tag v-else type="info" size="small">未批改</el-tag>
           </template>
@@ -44,7 +78,7 @@
             {{ formatDate(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewPaperDetail(row.id)">
               查看详情
@@ -55,6 +89,13 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页组件 -->
+      <div class="pagination-container">
+        <el-pagination v-model:current-page="pagination.currentPage" v-model:page-size="pagination.pageSize"
+          :page-sizes="[20, 50, 100, 200]" :total="pagination.total" layout="sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange" @current-change="handleCurrentChange" />
+      </div>
     </el-card>
 
     <!-- 生成试卷对话框 -->
@@ -64,12 +105,18 @@
           <el-input v-model="paperForm.title" placeholder="请输入试卷标题，如：三年级数学期中测试" />
         </el-form-item>
 
-        <!-- 修改为发布范围选择 -->
+        <!-- 新增科目选择 -->
+        <el-form-item label="科目" prop="subject">
+          <el-select v-model="paperForm.subject" placeholder="请选择科目" style="width: 100%">
+            <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
+          </el-select>
+        </el-form-item>
+
+        <!-- 发布范围选择 -->
         <el-form-item label="发布范围" prop="targetType">
           <el-radio-group v-model="paperForm.targetType" @change="handleTargetTypeChange">
             <el-radio label="student">单个学生</el-radio>
             <el-radio label="class">整个班级</el-radio>
-            <el-radio label="grade">整个年级</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -91,53 +138,43 @@
           </div>
         </el-form-item>
 
-        <!-- 年级选择 -->
-        <el-form-item v-if="paperForm.targetType === 'grade'" label="选择年级" prop="grade">
-          <el-select v-model="paperForm.grade" placeholder="请选择年级" style="width: 100%">
-            <el-option label="一年级" value="1" />
-            <el-option label="二年级" value="2" />
-            <el-option label="三年级" value="3" />
-            <el-option label="四年级" value="4" />
-            <el-option label="五年级" value="5" />
-            <el-option label="六年级" value="6" />
-          </el-select>
-          <div class="selection-info" v-if="paperForm.grade">
-            将向 {{ getGradeStudentCount() }} 名学生发布试卷
-          </div>
-        </el-form-item>
-
-        <!-- 题目选择部分保持不变 -->
+        <!-- 题目选择部分 -->
         <el-form-item label="选择题目" prop="questionIds">
           <div class="questions-selector">
             <div class="selector-header">
               <span>已选择 {{ paperForm.questionIds.length }} 道题目</span>
-              <el-button type="link" @click="selectAllQuestions">全选</el-button>
-              <el-button type="link" @click="clearSelection">清空</el-button>
+              <el-button type="text" @click="selectAllQuestions">全选</el-button>
+              <el-button type="text" @click="clearSelection">清空</el-button>
             </div>
 
             <!-- 随机选择控件 -->
             <div class="random-selector" v-if="availableQuestions.length > 0">
               <el-form :model="randomSelectForm" inline>
-                <el-form-item label="随机选择">
+                <el-form-item label="数量">
                   <el-input-number v-model="randomSelectForm.count" :min="1" :max="availableQuestions.length"
-                    size="small" style="width: 100px" />
+                    size="small" style="width: 80px" />
+                </el-form-item>
+
+                <!-- 新增科目筛选 -->
+                <el-form-item label="科目">
+                  <el-select v-model="randomSelectForm.subject" clearable size="small" style="width: 80px">
+                    <el-option label="不限" value=""></el-option>
+                    <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
+                  </el-select>
                 </el-form-item>
 
                 <el-form-item label="难度">
-                  <el-select v-model="randomSelectForm.difficulty" clearable size="small" style="width: 100px">
+                  <el-select v-model="randomSelectForm.difficulty" clearable size="small" style="width: 80px">
                     <el-option label="不限" value=""></el-option>
-                    <el-option label="简单" value="easy"></el-option>
-                    <el-option label="中等" value="medium"></el-option>
-                    <el-option label="困难" value="hard"></el-option>
+                    <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
+                      :value="difficulty.id" />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item label="类型">
-                  <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 120px">
+                  <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 80px">
                     <el-option label="不限" value=""></el-option>
-                    <el-option label="加减运算" value="AddAndSub"></el-option>
-                    <el-option label="乘除运算" value="MulAndDiv"></el-option>
-                    <el-option label="混合运算" value="Mixed"></el-option>
+                    <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
                   </el-select>
                 </el-form-item>
 
@@ -151,18 +188,21 @@
 
             <div class="questions-list">
               <el-checkbox-group v-model="paperForm.questionIds" style="width: 100%">
-                <div class="question-item" v-for="question in availableQuestions" :key="question.id">
+                <div class="question-item" v-for="(question, index) in availableQuestions" :key="question.id">
                   <el-checkbox :label="question.id">
                     <div class="question-content">
                       <span class="question-text">{{ question.content }}</span>
                       <div class="question-meta">
-                        <el-tag size="small" :type="getTypeTagType(question.type)">
-                          {{ getTypeText(question.type) }}
+                        <el-tag size="small" :type="getTypeTagType(question.typeId)">
+                          {{ getTypeName(question.typeId) }}
                         </el-tag>
-                        <el-tag size="small" :type="getDifficultyTagType(question.difficulty)">
-                          {{ getDifficultyText(question.difficulty) }}
+                        <el-tag size="small" :type="getDifficultyTagType(question.difficultyId)">
+                          {{ getDifficultyName(question.difficultyId) }}
                         </el-tag>
-                        <span class="answer">答案: {{ question.answer }}</span>
+                        <!-- 新增科目显示 -->
+                        <el-tag size="small" style="color: #409eff;">{{ question.subject || '数学'
+                        }}</el-tag>
+                        <span class="answer">答案: {{ getQuestionAnswer(question.answers) }}</span>
                       </div>
                     </div>
                   </el-checkbox>
@@ -185,17 +225,19 @@
       </template>
     </el-dialog>
 
-    <!-- 试卷详情对话框保持不变 -->
+    <!-- 试卷详情对话框 -->
     <el-dialog v-model="showDetailDialog" :title="`试卷详情 - ${currentPaper?.title}`" width="900px">
       <div v-if="currentPaperDetail">
         <el-descriptions :column="2" border style="margin-bottom: 20px;">
           <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
           <el-descriptions-item label="学生">{{ getStudentName(currentPaperDetail.paper.studentId)
           }}</el-descriptions-item>
+          <!-- 新增科目显示 -->
+          <el-descriptions-item label="科目">{{ currentPaperDetail.paper.subject || '数学' }}</el-descriptions-item>
           <el-descriptions-item label="题目数量">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
           <el-descriptions-item label="得分">
             <span v-if="currentPaperDetail.paper.score !== null && currentPaperDetail.paper.score !== undefined">
-              {{ currentPaperDetail.paper.score }} 分
+              {{ currentPaperDetail.paper.score.toFixed(1) }} 分
             </span>
             <el-tag v-else type="info" size="small">未批改</el-tag>
           </el-descriptions-item>
@@ -206,21 +248,31 @@
         <el-table :data="currentPaperDetail.questions" style="width: 100%">
           <el-table-column prop="id" label="题目ID" width="80" />
           <el-table-column prop="content" label="题目内容" />
-          <el-table-column prop="type" label="类型" width="100">
+          <!-- 新增科目列 -->
+          <el-table-column prop="subject" label="科目" width="100">
             <template #default="{ row }">
-              <el-tag size="small" :type="getTypeTagType(row.type)">
-                {{ getTypeText(row.type) }}
+              <el-tag size="small">{{ row.subject || '数学' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="getTypeTagType(row.typeId)">
+                {{ getTypeName(row.typeId) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="difficulty" label="难度" width="80">
+          <el-table-column label="难度" width="80">
             <template #default="{ row }">
-              <el-tag size="small" :type="getDifficultyTagType(row.difficulty)">
-                {{ getDifficultyText(row.difficulty) }}
+              <el-tag size="small" :type="getDifficultyTagType(row.difficultyId)">
+                {{ getDifficultyName(row.difficultyId) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="answer" label="答案" width="100" />
+          <el-table-column label="答案" width="100">
+            <template #default="{ row }">
+              {{ getQuestionAnswer(row.answers) }}
+            </template>
+          </el-table-column>
         </el-table>
       </div>
 
@@ -234,12 +286,14 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh } from '@element-plus/icons-vue'
 import { userApi } from '@/api/user'
 import { questionApi } from '@/api/question'
 import { paperApi } from '@/api/paper'
+import { getTypeTagType, getDifficultyTagType } from '@/utils/type'
 
-const papers = ref([])
+const allPapers = ref([]) // 存储所有试卷
+const filteredPapers = ref([]) // 存储筛选后的试卷
 const loading = ref(false)
 const generating = ref(false)
 const showGenerateDialog = ref(false)
@@ -248,23 +302,46 @@ const students = ref([])
 const availableQuestions = ref([])
 const currentPaper = ref(null)
 const currentPaperDetail = ref(null)
+const questionTypes = ref([])
+const difficultyLevels = ref([])
+
+// 搜索和筛选条件
+const searchTitle = ref('')
+const filterStudent = ref('')
+const filterSubject = ref('') // 新增科目筛选
+
+// 分页配置
+const pagination = reactive({
+  currentPage: 1,
+  pageSize: 50,
+  total: 0
+})
 
 const paperFormRef = ref()
 
-// 修改表单数据结构
+// 表单数据结构
 const paperForm = reactive({
   title: '',
-  targetType: 'student', // student, class, grade
+  subject: '数学', // 新增科目字段
+  targetType: 'student', // student, class
   studentId: null,       // 单个学生ID
   classNames: [],        // 班级名称数组
-  grade: '',             // 年级
   questionIds: []
 })
 
-// 更新验证规则
+// 计算科目列表
+const subjectList = computed(() => {
+  const subjects = new Set(availableQuestions.value.map(question => question.subject).filter(Boolean))
+  return Array.from(subjects).sort()
+})
+
+// 验证规则
 const paperRules = {
   title: [
     { required: true, message: '请输入试卷标题', trigger: 'blur' }
+  ],
+  subject: [
+    { required: true, message: '请选择科目', trigger: 'change' }
   ],
   studentId: [
     {
@@ -292,19 +369,6 @@ const paperRules = {
       trigger: 'change'
     }
   ],
-  grade: [
-    {
-      required: true,
-      validator: (rule, value, callback) => {
-        if (paperForm.targetType === 'grade' && !value) {
-          callback(new Error('请选择年级'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'change'
-    }
-  ],
   questionIds: [
     { required: true, message: '请至少选择一道题目', trigger: 'change' }
   ]
@@ -316,12 +380,18 @@ const classList = computed(() => {
   return Array.from(classes)
 })
 
+// 当前页显示的试卷
+const currentPagePapers = computed(() => {
+  const start = (pagination.currentPage - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
+  return filteredPapers.value.slice(start, end)
+})
+
 // 处理发布范围类型变化
 const handleTargetTypeChange = () => {
   // 清空其他类型的值
   paperForm.studentId = null
   paperForm.classNames = []
-  paperForm.grade = ''
 }
 
 // 获取选中班级的学生数量
@@ -334,33 +404,42 @@ const getSelectedClassStudentCount = () => {
   ).length
 }
 
-// 获取年级学生数量
-const getGradeStudentCount = () => {
-  if (paperForm.targetType !== 'grade' || !paperForm.grade) {
-    return 0
+// 获取题目类型和难度等级
+const loadQuestionTypesAndDifficulties = async () => {
+  try {
+    const [typesResponse, difficultiesResponse] = await Promise.all([
+      questionApi.getQuestionTypes(),
+      questionApi.getDifficultyLevels()
+    ])
+
+    questionTypes.value = typesResponse.data || []
+    difficultyLevels.value = difficultiesResponse.data || []
+  } catch (error) {
+    ElMessage.error('加载题目类型和难度失败: ' + error.message)
+  }
+}
+
+// 更新获取类型名称的方法
+const getTypeName = (typeId) => {
+  const type = questionTypes.value.find(t => t.id === typeId)
+  return type ? type.name : '未知类型'
+}
+
+// 更新获取难度名称的方法  
+const getDifficultyName = (difficultyId) => {
+  const difficulty = difficultyLevels.value.find(d => d.id === difficultyId)
+  return difficulty ? difficulty.name : '未知难度'
+}
+
+const getQuestionAnswer = (answers) => {
+  if (!answers || answers.length === 0) return '无答案'
+
+  const correctAnswer = answers.find(answer => answer.isCorrect)
+  if (correctAnswer) {
+    return correctAnswer.content
   }
 
-  // 将数字年级转换为中文
-  const gradeMap = {
-    '1': '一',
-    '2': '二',
-    '3': '三',
-    '4': '四',
-    '5': '五',
-    '6': '六'
-  }
-
-  const chineseGrade = gradeMap[paperForm.grade]
-
-  // 检查班级名称是否包含中文年级
-  return students.value.filter(student =>
-    student.userClass && (
-      // 匹配 "四年级一班"、"四年一班"、"四班" 等格式
-      student.userClass.includes(`${chineseGrade}年`) ||
-      student.userClass.startsWith(chineseGrade) ||
-      student.userClass.startsWith(paperForm.grade)
-    )
-  ).length
+  return answers[0]?.content || '无答案'
 }
 
 // 加载试卷列表
@@ -368,29 +447,57 @@ const loadPapers = async () => {
   try {
     loading.value = true
     const response = await paperApi.getAllPapers()
-    papers.value = response.data || []
+    // 按ID排序
+    allPapers.value = (response.data || []).sort((a, b) => a.id - b.id)
 
-    // 添加调试信息，检查试卷状态
-    console.log('试卷数据详情:')
-    papers.value.forEach(paper => {
-      console.log(`试卷 ${paper.id}:`, {
-        score: paper.score,
-        scoreType: typeof paper.score,
-        isNull: paper.score === null,
-        isUndefined: paper.score === undefined,
-        isZero: paper.score === 0,
-        totalQuestions: paper.totalQuestions,
-        correctCount: paper.correctCount
-      })
-    })
-    // 提示试卷加载成功
-    // ElMessage.success(`成功加载 ${papers.value.length} 份试卷`)
+    // 初始化筛选后的数据
+    applyFilters()
   } catch (error) {
     ElMessage.error('加载试卷列表失败: ' + error.message)
-    papers.value = []
+    allPapers.value = []
+    filteredPapers.value = []
   } finally {
     loading.value = false
   }
+}
+
+// 应用筛选条件
+const applyFilters = () => {
+  let filtered = [...allPapers.value]
+
+  // 试卷标题搜索
+  if (searchTitle.value) {
+    filtered = filtered.filter(paper =>
+      paper.title && paper.title.toLowerCase().includes(searchTitle.value.toLowerCase())
+    )
+  }
+
+  // 科目筛选
+  if (filterSubject.value) {
+    filtered = filtered.filter(paper => paper.subject === filterSubject.value)
+  }
+
+  // 学生筛选
+  if (filterStudent.value) {
+    filtered = filtered.filter(paper => paper.studentId == filterStudent.value)
+  }
+
+  filteredPapers.value = filtered
+  pagination.total = filteredPapers.value.length
+  pagination.currentPage = 1 // 重置到第一页
+}
+
+// 处理搜索
+const handleSearch = () => {
+  applyFilters()
+}
+
+// 重置搜索
+const resetSearch = () => {
+  searchTitle.value = ''
+  filterStudent.value = ''
+  filterSubject.value = '' // 重置科目筛选
+  applyFilters()
 }
 
 // 加载学生列表
@@ -407,15 +514,46 @@ const loadStudents = async () => {
 const loadAvailableQuestions = async () => {
   try {
     const response = await questionApi.getAllQuestions()
-    availableQuestions.value = response.data || []
+    // 按ID排序
+    availableQuestions.value = (response.data || []).sort((a, b) => a.id - b.id)
+
+    // 如果题目没有答案，尝试通过详情API获取完整信息
+    if (availableQuestions.value.length > 0 && !availableQuestions.value[0].answers) {
+      await loadQuestionsWithAnswers()
+    }
   } catch (error) {
     ElMessage.error('加载题目失败: ' + error.message)
+  }
+}
+
+// 使用能获取答案的方式加载题目
+const loadQuestionsWithAnswers = async () => {
+  try {
+    const detailedQuestions = []
+    for (const question of availableQuestions.value) {
+      try {
+        // 通过获取单个题目详情的API获取完整信息（包含答案）
+        const detailResponse = await questionApi.getQuestionById(question.id)
+        if (detailResponse.data && detailResponse.data.answers) {
+          detailedQuestions.push(detailResponse.data)
+        } else {
+          detailedQuestions.push(question)
+        }
+      } catch (error) {
+        console.warn(`获取题目 ${question.id} 详情失败:`, error)
+        detailedQuestions.push(question)
+      }
+    }
+    availableQuestions.value = detailedQuestions
+  } catch (error) {
+    console.warn('获取题目详情失败:', error)
   }
 }
 
 // 随机选择表单
 const randomSelectForm = reactive({
   count: 5,
+  subject: '', // 新增科目筛选
   difficulty: '',
   type: ''
 })
@@ -424,12 +562,23 @@ const randomSelectForm = reactive({
 const randomSelectQuestions = () => {
   let filteredQuestions = [...availableQuestions.value]
 
+  // 科目筛选
+  if (randomSelectForm.subject) {
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.subject === randomSelectForm.subject
+    )
+  }
+
   if (randomSelectForm.difficulty) {
-    filteredQuestions = filteredQuestions.filter(q => q.difficulty === randomSelectForm.difficulty)
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.difficultyId == randomSelectForm.difficulty
+    )
   }
 
   if (randomSelectForm.type) {
-    filteredQuestions = filteredQuestions.filter(q => q.type === randomSelectForm.type)
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.typeId == randomSelectForm.type
+    )
   }
 
   if (filteredQuestions.length === 0) {
@@ -446,7 +595,7 @@ const randomSelectQuestions = () => {
   ElMessage.success(`成功随机选择了 ${count} 道题目`)
 }
 
-// 生成试卷（修改为支持批量生成）
+// 生成试卷
 const handleGeneratePaper = async () => {
   try {
     await paperFormRef.value.validate()
@@ -472,26 +621,6 @@ const handleGeneratePaper = async () => {
       targetStudents = students.value.filter(student =>
         paperForm.classNames.includes(student.userClass)
       )
-    } else if (paperForm.targetType === 'grade') {
-      // 整个年级 - 使用改进的年级匹配逻辑
-      const gradeMap = {
-        '1': '一',
-        '2': '二',
-        '3': '三',
-        '4': '四',
-        '5': '五',
-        '6': '六'
-      }
-
-      const chineseGrade = gradeMap[paperForm.grade]
-
-      targetStudents = students.value.filter(student =>
-        student.userClass && (
-          student.userClass.includes(`${chineseGrade}年`) ||
-          student.userClass.startsWith(chineseGrade) ||
-          student.userClass.startsWith(paperForm.grade)
-        )
-      )
     }
 
     if (targetStudents.length === 0) {
@@ -503,6 +632,7 @@ const handleGeneratePaper = async () => {
     const generatePromises = targetStudents.map(student => {
       const paperData = {
         title: paperForm.title,
+        subject: paperForm.subject, // 添加科目信息
         studentId: student.id,
         questionIds: paperForm.questionIds
       }
@@ -516,10 +646,10 @@ const handleGeneratePaper = async () => {
     // 重置表单
     Object.assign(paperForm, {
       title: '',
+      subject: '数学',
       targetType: 'student',
       studentId: null,
       classNames: [],
-      grade: '',
       questionIds: []
     })
 
@@ -531,7 +661,6 @@ const handleGeneratePaper = async () => {
     generating.value = false
   }
 }
-
 
 // 删除试卷
 const handleDeletePaper = async (paperId) => {
@@ -580,42 +709,18 @@ const getStudentName = (studentId) => {
   return student ? student.username : '未知'
 }
 
-// 工具函数
-const getTypeText = (type) => {
-  const map = {
-    'AddAndSub': '加减运算',
-    'MulAndDiv': '乘除运算',
-    'Mixed': '混合运算'
-  }
-  return map[type] || type
+// 分页大小改变
+const handleSizeChange = (newSize) => {
+  pagination.pageSize = newSize
+  pagination.currentPage = 1
 }
 
-const getTypeTagType = (type) => {
-  const map = {
-    'AddAndSub': 'success',
-    'MulAndDiv': 'primary',
-    'Mixed': 'warning'
-  }
-  return map[type] || 'info'
+// 当前页改变
+const handleCurrentChange = (newPage) => {
+  pagination.currentPage = newPage
 }
 
-const getDifficultyText = (difficulty) => {
-  const map = {
-    'easy': '简单',
-    'medium': '中等',
-    'hard': '困难'
-  }
-  return map[difficulty] || difficulty
-}
-
-const getDifficultyTagType = (difficulty) => {
-  const map = {
-    'easy': 'success',
-    'medium': 'warning',
-    'hard': 'danger'
-  }
-  return map[difficulty] || 'info'
-}
+// 使用共享工具库提供的标签样式函数
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -639,6 +744,7 @@ onMounted(() => {
   loadPapers()
   loadStudents()
   loadAvailableQuestions()
+  loadQuestionTypesAndDifficulties()
 })
 </script>
 
@@ -663,6 +769,24 @@ onMounted(() => {
 .header-stats {
   font-size: 14px;
   color: #666;
+}
+
+.filtered-count {
+  color: #409eff;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+/* 筛选工具栏 */
+.filter-toolbar {
+  margin-bottom: 15px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border: 1px solid #ebeef5;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
 }
 
 .questions-selector {
@@ -698,6 +822,11 @@ onMounted(() => {
   margin-left: 8px;
 }
 
+.question-id {
+  font-size: 12px;
+  color: #909399;
+}
+
 .question-text {
   display: block;
   margin-bottom: 4px;
@@ -708,6 +837,7 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .answer {
@@ -739,5 +869,13 @@ onMounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #666;
+}
+
+/* 分页样式 */
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 20px 0;
 }
 </style>
