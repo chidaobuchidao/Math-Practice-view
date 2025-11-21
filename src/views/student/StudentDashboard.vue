@@ -19,6 +19,7 @@ import { questionApi } from '@/api/question'
 import { useUserStore } from '@/stores/user'
 import WrongQuestions from './components/WrongQuestions.vue'
 import { getTypeName, getDifficultyName, getTypeTagType, getDifficultyTagType, getTypeTextByKey } from '@/utils/type'
+import request from '@/utils/request'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -34,6 +35,17 @@ const examTime = ref(0)
 const activeTab = ref('papers')
 let timer = null
 
+// 获取图片完整URL
+const getImageUrl = (path) => {
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${request.defaults.baseURL}${path}`
+}
+
+// 预览图片
+const previewImage = (path) => {
+  window.open(getImageUrl(path), '_blank')
+}
+
 // 错题统计
 const wrongQuestionStats = ref({
     total: 0,
@@ -48,16 +60,25 @@ const paperStats = computed(() => {
     const pending = total - completed
     const completedPapers = papers.value.filter(p => p.score !== null && p.score !== undefined)
     const avgScore = completedPapers.length > 0
-        ? (completedPapers.reduce((sum, p) => sum + p.score, 0) / completedPapers.length).toFixed(1)
+        ? Math.round(completedPapers.reduce((sum, p) => sum + (p.score || 0), 0) / completedPapers.length)
         : 0
 
     return { total, completed, pending, avgScore }
 })
 
+// 获取排序后的选项（按sortOrder排序）
+const getSortedOptions = (options) => {
+  if (!options || !Array.isArray(options)) return []
+  return [...options].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+}
+
 const answeredCount = computed(() => {
-    return Object.values(studentAnswers.value).filter(answer =>
-        answer !== null && answer !== undefined && answer !== ''
-    ).length
+    return Object.values(studentAnswers.value).filter(answer => {
+        if (answer === null || answer === undefined) return false
+        if (typeof answer === 'string' && answer.trim() === '') return false
+        if (Array.isArray(answer) && answer.length === 0) return false
+        return true
+    }).length
 })
 
 const formatExamTime = computed(() => {
@@ -66,27 +87,21 @@ const formatExamTime = computed(() => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 })
 
-// 新增：增强题目信息，获取正确答案等详细信息
+// 增强题目信息，获取完整详情（包括选项、答案、图片）
 const enhanceQuestionsWithDetails = async (questions) => {
-    try {
-        for (let question of questions) {
-            // 如果题目信息不完整，获取完整题目详情
-            if (!question.answers || question.answers.length === 0) {
-                try {
-                    const questionDetail = await questionApi.getQuestionById(question.id)
-                    if (questionDetail.data) {
-                        // 合并题目详情，保留学生答案信息
-                        const studentAnswer = question.studentAnswer
-                        Object.assign(question, questionDetail.data)
-                        question.studentAnswer = studentAnswer // 恢复学生答案
-                    }
-                } catch (error) {
-                    console.warn(`获取题目 ${question.id} 详情失败:`, error)
+    for (const question of questions) {
+        if (!question.options || !question.images) {
+            try {
+                const detail = await questionApi.getQuestionById(question.id)
+                if (detail.data) {
+                    const studentAnswer = question.studentAnswer
+                    Object.assign(question, detail.data)
+                    question.studentAnswer = studentAnswer
                 }
+            } catch (error) {
+                console.warn(`获取题目 ${question.id} 详情失败:`, error)
             }
         }
-    } catch (error) {
-        console.warn('增强题目信息失败:', error)
     }
 }
 
@@ -207,14 +222,25 @@ const startPaper = async (paper) => {
 
         studentAnswers.value = {}
 
-        // 初始化学生答案 - 从试卷详情中获取学生答案
+        // 初始化学生答案（选择题使用选项键A/B/C/D，其他类型使用字符串）
         if (currentPaperDetail.value.questions) {
             currentPaperDetail.value.questions.forEach(question => {
-                // 从试卷详情中获取学生答案
-                if (question.studentAnswer !== null && question.studentAnswer !== undefined) {
-                    studentAnswers.value[question.id] = question.studentAnswer
+                const answerValue = question.studentAnswer
+                if (question.typeId === 2) {
+                    // 多选题：选项键数组（如 ['A', 'B']）
+                    if (answerValue !== null && answerValue !== undefined) {
+                        studentAnswers.value[question.id] = Array.isArray(answerValue) 
+                            ? answerValue 
+                            : (typeof answerValue === 'string' && answerValue ? answerValue.split(',').map(s => s.trim()) : [])
+                    } else {
+                        studentAnswers.value[question.id] = []
+                    }
+                } else if (question.typeId === 1) {
+                    // 单选题：选项键字符串（如 'A'）
+                    studentAnswers.value[question.id] = answerValue !== null && answerValue !== undefined ? String(answerValue) : ''
                 } else {
-                    studentAnswers.value[question.id] = null
+                    // 其他类型：字符串
+                    studentAnswers.value[question.id] = answerValue !== null && answerValue !== undefined ? String(answerValue) : ''
                 }
             })
         }
@@ -245,8 +271,29 @@ const submitPaper = async () => {
 
         submitting.value = true
 
+        // 格式化答案：选择题使用选项键，其他类型使用字符串
+        const formattedAnswers = {}
+        Object.keys(studentAnswers.value).forEach(questionId => {
+            const answer = studentAnswers.value[questionId]
+            const question = currentPaperDetail.value.questions.find(q => q.id === parseInt(questionId))
+            
+            if (answer !== null && answer !== undefined && answer !== '') {
+                if (question && (question.typeId === 1 || question.typeId === 2)) {
+                    // 选择题：多选题转换为逗号分隔的选项键字符串
+                    formattedAnswers[questionId] = question.typeId === 2 && Array.isArray(answer)
+                        ? answer.filter(a => a).join(',')
+                        : String(answer)
+                } else {
+                    // 其他类型：去除首尾空格
+                    formattedAnswers[questionId] = String(answer).trim()
+                }
+            } else {
+                formattedAnswers[questionId] = ''
+            }
+        })
+
         const submitData = {
-            answers: studentAnswers.value,
+            answers: formattedAnswers,
             timeSpent: examTime.value
         }
 
@@ -254,7 +301,8 @@ const submitPaper = async () => {
 
         const response = await paperApi.submitPaper(currentPaper.value.id, submitData)
 
-        ElMessage.success(`试卷提交成功！得分: ${response.data.score}分`)
+        const score = response.data.score ? Math.round(response.data.score) : 0
+        ElMessage.success(`试卷提交成功！得分: ${score}分`)
         showPaperDialog.value = false
 
         if (timer) {
@@ -266,7 +314,13 @@ const submitPaper = async () => {
         await loadWrongQuestionStats()
     } catch (error) {
         console.error('提交试卷错误:', error)
-        ElMessage.error('提交试卷失败: ' + (error.message || '网络错误'))
+        
+        // 检查是否是类型转换错误
+        if (error.message && error.message.includes('Cannot deserialize value of type')) {
+            ElMessage.error('提交失败：后端暂不支持文本类型答案，请联系管理员更新后端接口以支持字符串类型答案')
+        } else {
+            ElMessage.error('提交试卷失败: ' + (error.message || '网络错误'))
+        }
     } finally {
         submitting.value = false
     }
@@ -285,14 +339,42 @@ const viewPaperDetail = async (paper) => {
         studentAnswers.value = {}
         if (currentPaperDetail.value.questions) {
             currentPaperDetail.value.questions.forEach(question => {
-                // 关键修改：从试卷详情的 paper_questions 关联数据中获取学生答案
-                // 学生答案可能在 question.paper_question 中
-                if (question.paper_question && question.paper_question.student_answer !== null) {
-                    studentAnswers.value[question.id] = question.paper_question.student_answer
-                } else if (question.studentAnswer !== null && question.studentAnswer !== undefined) {
-                    studentAnswers.value[question.id] = question.studentAnswer
+                // 获取学生答案：优先从 question.studentAnswer 获取
+                let answerValue = question.studentAnswer
+                
+                // 如果 studentAnswer 不存在，尝试从其他位置获取
+                if ((answerValue === null || answerValue === undefined) && question.paper_question) {
+                    answerValue = question.paper_question.student_answer
+                }
+                
+                // 根据题目类型处理答案格式（选择题使用选项键）
+                if (answerValue !== null && answerValue !== undefined) {
+                    // 处理数字类型（后端可能返回数字，需要转换为选项键）
+                    if (typeof answerValue === 'number') {
+                        if (question.typeId === 1 || question.typeId === 2) {
+                            // 选择题：将数字转换为选项键（1=A, 2=B, 3=C, 4=D）
+                            const optionIndex = Math.round(answerValue)
+                            if (optionIndex >= 1 && optionIndex <= 26) {
+                                answerValue = String.fromCharCode(65 + optionIndex - 1) // 'A' + index - 1
+                            }
+                        }
+                    }
+                    
+                    if (question.typeId === 2) {
+                        // 多选题：选项键数组（如 ['A', 'B']）
+                        studentAnswers.value[question.id] = Array.isArray(answerValue) 
+                            ? answerValue 
+                            : (typeof answerValue === 'string' && answerValue ? answerValue.split(',').map(s => s.trim()) : [])
+                    } else if (question.typeId === 1) {
+                        // 单选题：选项键字符串（如 'A'）
+                        studentAnswers.value[question.id] = String(answerValue)
+                    } else {
+                        // 其他类型：字符串或数字
+                        studentAnswers.value[question.id] = String(answerValue)
+                    }
                 } else {
-                    studentAnswers.value[question.id] = null
+                    // 多选题初始化为空数组，其他类型初始化为空字符串
+                    studentAnswers.value[question.id] = question.typeId === 2 ? [] : ''
                 }
             })
         }
@@ -309,18 +391,61 @@ const viewPaperDetail = async (paper) => {
         ElMessage.error('加载试卷详情失败: ' + error.message)
     }
 }
-// 获取题目正确答案
+// 获取题目正确答案（统一返回字符串格式）
 const getQuestionAnswer = (answers) => {
     if (!answers || answers.length === 0) return '无答案'
 
     // 查找正确答案（isCorrect为true的答案）
     const correctAnswer = answers.find(answer => answer.isCorrect)
     if (correctAnswer) {
-        return correctAnswer.content
+        // 统一转换为字符串格式，支持所有类型的答案
+        return String(correctAnswer.content || '')
     }
 
     // 如果没有标记正确答案，返回第一个答案
-    return answers[0]?.content || '无答案'
+    const firstAnswer = answers[0]?.content
+    return firstAnswer !== null && firstAnswer !== undefined ? String(firstAnswer) : '无答案'
+}
+
+// 格式化正确答案用于显示
+const formatCorrectAnswerForDisplay = (question) => {
+    if (!question) return '无答案'
+    if (question.typeId === 1 || question.typeId === 2) {
+        const correctAnswers = question.answers?.filter(a => a.isCorrect)?.map(a => a.content) || []
+        return question.typeId === 1 ? (correctAnswers[0] || '无答案') : correctAnswers.sort().join(', ')
+    }
+    return question.answers?.find(a => a.isCorrect)?.content || '无答案'
+}
+
+// 格式化学生答案用于显示
+// 格式化得分（保留整数）
+const formatScore = (score) => {
+    if (score === null || score === undefined) return 0
+    return Math.round(Number(score))
+}
+
+// 格式化学生答案用于显示（支持选择题）
+const formatStudentAnswerForDisplay = (studentAnswer, question) => {
+    // 检查答案是否为空
+    if (studentAnswer === null || studentAnswer === undefined || 
+        studentAnswer === '' || 
+        (Array.isArray(studentAnswer) && studentAnswer.length === 0)) {
+        return '未作答'
+    }
+    
+    // 处理选择题
+    if (question && (question.typeId === 1 || question.typeId === 2)) {
+        // 如果是数字，转换为选项键（1=A, 2=B, 3=C, 4=D）
+        if (typeof studentAnswer === 'number') {
+            const optionIndex = Math.round(studentAnswer)
+            if (optionIndex >= 1 && optionIndex <= 26) {
+                return String.fromCharCode(65 + optionIndex - 1)
+            }
+        }
+        return Array.isArray(studentAnswer) ? studentAnswer.sort().join(', ') : String(studentAnswer)
+    }
+    
+    return String(studentAnswer)
 }
 
 // 工具函数
@@ -548,7 +673,7 @@ onMounted(() => {
                                     <template #default="{ row }">
                                         <span v-if="row.score !== null && row.score !== undefined"
                                             :class="{ 'high-score': row.score >= 90, 'medium-score': row.score >= 60 && row.score < 90, 'low-score': row.score < 60 }">
-                                            {{ row.score }} 分
+                                            {{ formatScore(row.score) }} 分
                                         </span>
                                         <el-tag v-else type="warning" size="small">未完成</el-tag>
                                     </template>
@@ -602,7 +727,7 @@ onMounted(() => {
                     <el-descriptions :column="2" border>
                         <el-descriptions-item label="用户名">{{ userInfo.username }}</el-descriptions-item>
                         <el-descriptions-item label="角色">{{ userInfo.role === 'student' ? '学生' : userInfo.role
-                            }}</el-descriptions-item>
+                        }}</el-descriptions-item>
                         <el-descriptions-item label="班级">{{ userInfo.userClass || '未设置' }}</el-descriptions-item>
                         <el-descriptions-item label="注册时间">{{ formatDate(userInfo.createdAt) }}</el-descriptions-item>
                     </el-descriptions>
@@ -619,10 +744,10 @@ onMounted(() => {
                         <h3>{{ currentPaper.title }}</h3>
                         <div class="exam-stats">
                             <span>题目数量: {{ currentPaper.totalQuestions }}</span>
-                            <span v-if="currentPaper.score">得分: {{ currentPaper.score }} 分</span>
+                            <span v-if="currentPaper.score">得分: {{ formatScore(currentPaper.score) }} 分</span>
                             <span v-if="currentPaper.score">正确题数: {{ currentPaper.correctCount }}/{{
                                 currentPaper.totalQuestions
-                                }}</span>
+                            }}</span>
                             <span v-else>已答: {{ answeredCount }}/{{ currentPaper.totalQuestions }}</span>
                             <span>用时: {{ formatTime(currentPaper.score ? currentPaper.timeSpent : examTime) }}</span>
                         </div>
@@ -655,21 +780,60 @@ onMounted(() => {
 
                         <div class="question-content">
                             <p class="question-text">{{ question.content }}</p>
+                            <!-- 显示题目图片 -->
+                            <div v-if="question.images && question.images.length > 0" class="question-images">
+                                <img v-for="(img, idx) in question.images" :key="idx" 
+                                     :src="getImageUrl(img.imagePath)" 
+                                     class="question-image" 
+                                     @click="previewImage(img.imagePath)" />
+                            </div>
 
-                            <!-- 答题状态 -->
+                            <!-- 答题状态：根据题目类型显示不同的答题方式 -->
                             <div v-if="!currentPaper.score" class="answer-input">
-                                <el-input-number v-model="studentAnswers[question.id]" :precision="2"
-                                    placeholder="请输入答案" style="width: 200px;"
+                                <!-- 单选题：单选按钮组 -->
+                                <div v-if="question.typeId === 1 && question.options?.length" class="choice-options">
+                                    <el-radio-group v-model="studentAnswers[question.id]" @change="handleAnswerChange(question.id)">
+                                        <el-radio 
+                                            v-for="option in getSortedOptions(question.options)" 
+                                            :key="option.optionKey" 
+                                            :label="option.optionKey"
+                                            class="choice-option">
+                                            <span class="option-label">{{ option.optionKey }}.</span>
+                                            <span v-html="option.content"></span>
+                                        </el-radio>
+                                    </el-radio-group>
+                                </div>
+
+                                <!-- 多选题：复选框组 -->
+                                <div v-else-if="question.typeId === 2 && question.options?.length" class="choice-options">
+                                    <el-checkbox-group v-model="studentAnswers[question.id]" @change="handleAnswerChange(question.id)">
+                                        <el-checkbox 
+                                            v-for="option in getSortedOptions(question.options)" 
+                                            :key="option.optionKey" 
+                                            :label="option.optionKey"
+                                            class="choice-option">
+                                            <span class="option-label">{{ option.optionKey }}.</span>
+                                            <span v-html="option.content"></span>
+                                        </el-checkbox>
+                                    </el-checkbox-group>
+                                </div>
+
+                                <!-- 其他类型：文本输入框 -->
+                                <el-input 
+                                    v-else
+                                    v-model="studentAnswers[question.id]" 
+                                    placeholder="请输入答案"
+                                    style="width: 300px;" 
                                     @change="handleAnswerChange(question.id)" />
                             </div>
 
                             <!-- 显示正确答案和学生答案（如果试卷已完成） -->
                             <div v-if="currentPaper.score" class="answer-review">
                                 <div class="correct-answer-section">
-                                    <p><strong>正确答案:</strong> {{ getQuestionAnswer(question.answers) }}</p>
+                                    <p><strong>正确答案:</strong> {{ formatCorrectAnswerForDisplay(question) }}</p>
                                     <p><strong>你的答案:</strong>
                                         <span :class="question.isCorrect ? 'correct-text' : 'wrong-text'">
-                                            {{ studentAnswers[question.id] || '未作答' }}
+                                            {{ formatStudentAnswerForDisplay(studentAnswers[question.id], question) }}
                                         </span>
                                     </p>
                                 </div>
@@ -860,6 +1024,25 @@ onMounted(() => {
     margin-bottom: 15px;
 }
 
+.question-images {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.question-image {
+    max-width: 300px;
+    max-height: 300px;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.question-image:hover {
+    border-color: #409eff;
+}
+
 .answer-input {
     margin-top: 15px;
 }
@@ -896,5 +1079,28 @@ onMounted(() => {
 
 .exam-footer .el-button {
     margin-left: 10px;
+}
+
+/* 选择题选项样式 */
+.choice-options {
+    margin-top: 15px;
+}
+
+.choice-option {
+    display: block;
+    margin-bottom: 12px;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.choice-option:hover {
+    background-color: #f5f7fa;
+}
+
+.option-label {
+    font-weight: bold;
+    margin-right: 8px;
+    color: #409eff;
 }
 </style>

@@ -53,5 +53,25 @@ export const questionApi = {
   
   generateQuickQuestions: (count, createdBy) => {
     return request.post(`/api/questions/generate/quick?count=${count}&createdBy=${createdBy}`)
+  },
+
+  // 创建单选题
+  createSingleChoiceQuestion(data) {
+    return request.post('/api/choice-questions/single', data)
+  },
+
+  // 创建多选题
+  createMultipleChoiceQuestion(data) {
+    return request.post('/api/choice-questions/multiple', data)
+  },
+
+  // 更新选择题
+  updateChoiceQuestion(questionId, data) {
+    return request.put(`/api/choice-questions/${questionId}`, data)
+  },
+
+  // 获取选择题详情
+  getChoiceQuestion(questionId) {
+    return request.get(`/api/choice-questions/${questionId}`)
   }
 }

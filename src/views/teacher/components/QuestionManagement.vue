@@ -127,7 +127,15 @@
       <el-table :data="currentPageQuestions" v-loading="loading" :default-sort="{ prop: 'id', order: 'ascending' }"
         style="margin-top: -15px">
         <el-table-column prop="id" label="题目ID" width="100" align="center" sortable />
-        <el-table-column prop="content" label="题目内容" min-width="200" />
+        <el-table-column prop="content" label="题目内容" min-width="200">
+          <template #default="{ row }">
+            <div>{{ row.content }}</div>
+            <div v-if="row.images && row.images.length > 0" class="question-images">
+              <img v-for="(img, idx) in row.images" :key="idx" :src="getImageUrl(img.imagePath)" 
+                   class="question-image-thumb" @click="previewImage(img.imagePath)" />
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="subject" label="科目" width="120" sortable>
           <template #default="{ row }">
             <el-tag>{{ row.subject || '数学' }}</el-tag>
@@ -154,7 +162,7 @@
         </el-table-column>
         <el-table-column label="答案" width="120">
           <template #default="{ row }">
-            {{ getQuestionAnswer(row.answers) }}
+            {{ getQuestionAnswer(row) }}
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="180" sortable>
@@ -189,6 +197,18 @@
           <el-input v-model="formData.content" type="textarea" :rows="3" placeholder="请输入题目内容" />
         </el-form-item>
 
+        <el-form-item label="题目图片">
+          <div class="images-section">
+            <div v-for="(img, index) in formData.images" :key="index" class="image-item">
+              <ImageUploader v-model="formData.images[index]" @uploaded="() => {}" />
+            </div>
+            <el-button type="primary" size="small" @click="addImage">
+              <el-icon><Plus /></el-icon>
+              添加图片
+            </el-button>
+          </div>
+        </el-form-item>
+
         <el-form-item label="科目" prop="subject">
           <el-select v-model="formData.subject" placeholder="请选择科目" style="width: 100%">
             <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
@@ -218,23 +238,46 @@
           <el-input v-model="formData.knowledgePoint" placeholder="请输入知识点，如：加法运算" />
         </el-form-item>
 
-        <el-form-item label="答案" prop="answerContent">
-          <el-input v-model="formData.answerContent" placeholder="请输入答案" />
-          <div class="form-tip">对于数值答案直接输入数字，对于文本答案输入文本内容</div>
+        <!-- 选择题选项管理（单选或多选） -->
+        <el-form-item v-if="isChoiceQuestion" label="选择题选项" prop="options">
+          <div class="options-container">
+            <div v-for="(option, index) in formData.options" :key="index" class="option-item">
+              <el-input v-model="option.content" :placeholder="`选项 ${String.fromCharCode(65 + index)}`" style="flex: 1; margin-right: 10px;">
+                <template #prepend>{{ String.fromCharCode(65 + index) }}.</template>
+              </el-input>
+              <el-checkbox v-model="option.isCorrect" :disabled="!isMultipleChoice && hasOtherCorrectOption(index)">
+                正确答案
+              </el-checkbox>
+              <el-button type="danger" size="small" @click="removeOption(index)" :disabled="formData.options.length <= 2">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-button type="primary" size="small" @click="addOption" :disabled="formData.options.length >= 8">
+              <el-icon><Plus /></el-icon>
+              添加选项
+            </el-button>
+            <div class="form-tip">至少需要2个选项，最多8个选项。请至少标记一个正确答案。</div>
+          </div>
         </el-form-item>
 
-        <el-form-item label="答案类型" prop="answerType">
-          <el-select v-model="formData.answerType" placeholder="请选择答案类型" style="width: 100%">
-            <el-option label="数值" value="number" />
-            <el-option label="文本" value="text" />
-            <el-option label="分数" value="fraction" />
-            <el-option label="单选" value="single" />
-            <el-option label="多选" value="multiple" />
-          </el-select>
-        </el-form-item>
+        <!-- 非选择题答案输入 -->
+        <template v-else>
+          <el-form-item label="答案" prop="answerContent">
+            <el-input v-model="formData.answerContent" placeholder="请输入答案" />
+            <div class="form-tip">对于数值答案直接输入数字，对于文本答案输入文本内容</div>
+          </el-form-item>
+
+          <el-form-item label="答案类型" prop="answerType">
+            <el-select v-model="formData.answerType" placeholder="请选择答案类型" style="width: 100%">
+              <el-option label="数值" value="number" />
+              <el-option label="文本" value="text" />
+              <el-option label="分数" value="fraction" />
+            </el-select>
+          </el-form-item>
+        </template>
 
         <el-form-item label="解析" prop="analysis">
-          <el-input v-model="formData.analysis" type="textarea" :rows="3" placeholder="请输入题目解析" />
+          <el-input v-model="formData.analysis" type="textarea" :rows="3" placeholder="请输入题目解析（支持HTML格式）" />
         </el-form-item>
       </el-form>
 
@@ -330,10 +373,23 @@
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Search, Collection, TrendCharts, DataAnalysis, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Collection, TrendCharts, DataAnalysis, ArrowDown, Delete } from '@element-plus/icons-vue'
 import { questionApi } from '@/api/question'
 import { useUserStore } from '@/stores/user'
 import { getTypeTagType, getDifficultyTagType } from '@/utils/type'
+import ImageUploader from './ImageUploader.vue'
+import request from '@/utils/request'
+
+// 获取图片完整URL
+const getImageUrl = (path) => {
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${request.defaults.baseURL}${path}`
+}
+
+// 预览图片
+const previewImage = (path) => {
+  window.open(getImageUrl(path), '_blank')
+}
 
 const userStore = useUserStore()
 
@@ -374,6 +430,11 @@ const formData = reactive({
   analysis: '',
   answerContent: '',
   answerType: 'number',
+  options: [
+    { content: '', isCorrect: false, sortOrder: 1 },
+    { content: '', isCorrect: false, sortOrder: 2 }
+  ],
+  images: [],
   createdBy: userStore.userInfo?.id
 })
 
@@ -398,6 +459,22 @@ const subjectList = computed(() => {
   const subjects = new Set(allQuestions.value.map(question => question.subject).filter(Boolean))
   return Array.from(subjects).sort()
 })
+
+// 判断是否为选择题（单选或多选）
+const isChoiceQuestion = computed(() => {
+  return formData.typeId === 1 || formData.typeId === 2 // 1=单选题, 2=多选题
+})
+
+// 判断是否为多选题
+const isMultipleChoice = computed(() => {
+  return formData.typeId === 2 // 2=多选题
+})
+
+// 检查单选情况下是否已有其他选项标记为正确答案
+const hasOtherCorrectOption = (currentIndex) => {
+  if (isMultipleChoice.value) return false
+  return formData.options.some((opt, idx) => idx !== currentIndex && opt.isCorrect)
+}
 
 // 当前页显示的题目
 const currentPageQuestions = computed(() => {
@@ -459,18 +536,42 @@ const getDifficultyName = (difficultyId) => {
   return difficulty ? difficulty.name : '未知难度'
 }
 
-// 获取题目答案
-const getQuestionAnswer = (answers) => {
-  if (!answers || answers.length === 0) return '无答案'
-
-  // 查找正确答案
-  const correctAnswer = answers.find(answer => answer.isCorrect)
-  if (correctAnswer) {
-    return correctAnswer.content
+// 获取题目答案（支持选择题和非选择题）
+const getQuestionAnswer = (question) => {
+  if (!question) return '无答案'
+  
+  // 选择题：从answers中获取正确答案，content是选项键（A, B, C, D）
+  if (question.typeId === 1 || question.typeId === 2) {
+    // 检查是否有答案数据
+    if (!question.answers || question.answers.length === 0) {
+      return '无答案'
+    }
+    
+    // 过滤正确答案：isCorrect可能是true、1或其他truthy值
+    const correctAnswers = question.answers
+      .filter(a => {
+        const isCorrect = a.isCorrect
+        return isCorrect === true || isCorrect === 1 || isCorrect === '1' || isCorrect === 'true'
+      })
+      .map(a => a.content)
+      .filter(content => content && content.trim()) // 过滤空内容
+    
+    if (correctAnswers.length === 0) {
+      return '无答案'
+    }
+    return question.typeId === 1 ? correctAnswers[0] : correctAnswers.sort().join(', ')
   }
-
-  // 如果没有标记正确答案，返回第一个答案
-  return answers[0]?.content || '无答案'
+  
+  // 非选择题：返回答案内容
+  if (!question.answers || question.answers.length === 0) {
+    return '无答案'
+  }
+  
+  const correctAnswer = question.answers.find(a => {
+    const isCorrect = a.isCorrect
+    return isCorrect === true || isCorrect === 1 || isCorrect === '1' || isCorrect === 'true'
+  })
+  return correctAnswer?.content || '无答案'
 }
 
 // 获取选中的类型文本
@@ -491,8 +592,52 @@ const questionRules = {
   subject: [{ required: true, message: '请输入科目', trigger: 'change' }],
   typeId: [{ required: true, message: '请选择题目类型', trigger: 'change' }],
   difficultyId: [{ required: true, message: '请选择难度', trigger: 'change' }],
-  answerContent: [{ required: true, message: '请输入答案', trigger: 'blur' }],
-  answerType: [{ required: true, message: '请选择答案类型', trigger: 'change' }]
+  answerContent: [
+    {
+      validator: (rule, value, callback) => {
+        if (!isChoiceQuestion.value && (!value || value.trim() === '')) {
+          callback(new Error('请输入答案'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  answerType: [
+    {
+      validator: (rule, value, callback) => {
+        if (!isChoiceQuestion.value && !value) {
+          callback(new Error('请选择答案类型'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  options: [
+    {
+      validator: (rule, value, callback) => {
+        if (isChoiceQuestion.value) {
+          const validOptions = formData.options.filter(opt => opt.content.trim() !== '')
+          if (validOptions.length < 2) {
+            callback(new Error('选择题至少需要2个有效选项'))
+          } else {
+            const hasCorrectAnswer = formData.options.some(opt => opt.isCorrect && opt.content.trim() !== '')
+            if (!hasCorrectAnswer) {
+              callback(new Error('请至少标记一个正确答案'))
+            } else {
+              callback()
+            }
+          }
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ]
 }
 
 const generateRules = {
@@ -616,23 +761,9 @@ const resetFilters = () => {
 const loadQuestions = async () => {
   try {
     loading.value = true
-
-    // 使用能获取答案的API，或者修改现有API
     const response = await questionApi.getAllQuestions()
-
-    // 按ID排序
     allQuestions.value = (response.data || []).sort((a, b) => a.id - b.id)
-
-    console.log('题目数据:', allQuestions.value)
-
-    // 如果还是没有答案，尝试使用试卷详情的查询方式
-    if (allQuestions.value.length > 0 && !allQuestions.value[0].answers) {
-      await loadQuestionsWithAnswers()
-    }
-
-    // 初始化筛选后的数据
     applyFilters()
-
   } catch (error) {
     ElMessage.error('加载题目失败: ' + error.message)
     allQuestions.value = []
@@ -642,42 +773,70 @@ const loadQuestions = async () => {
   }
 }
 
-// 加载题目
-const loadQuestionsWithAnswers = async () => {
-  try {
-    // 方法1: 通过试卷详情API的模式获取
-    const detailedQuestions = []
-    for (const question of allQuestions.value) {
-      try {
-        // 假设有获取单个题目详情的API
-        const detailResponse = await questionApi.getQuestionById(question.id)
-        if (detailResponse.data && detailResponse.data.answers) {
-          detailedQuestions.push(detailResponse.data)
-        } else {
-          detailedQuestions.push(question)
-        }
-      } catch (error) {
-        detailedQuestions.push(question)
-      }
-    }
-    allQuestions.value = detailedQuestions
-  } catch (error) {
-    console.warn('获取题目详情失败:', error)
-  }
-}
-
 // 编辑题目
 const handleEdit = (row) => {
+  // 判断是否为选择题
+  const isChoice = row.typeId === 1 || row.typeId === 2
+  
+  // 加载选项（选择题从options加载，非选择题从answers加载）
+  if (isChoice && row.options && row.options.length > 0) {
+    // 选择题：从options加载选项
+    // 获取正确答案（从answers中获取，答案的content是optionKey如'A', 'B'）
+    const correctAnswers = row.answers
+      ?.filter(a => a.isCorrect)
+      ?.map(a => a.content) || []
+    
+    formData.options = row.options
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      .map((option, index) => ({
+        content: option.content || '',
+        isCorrect: correctAnswers.includes(option.optionKey || String.fromCharCode(65 + index)),
+        sortOrder: option.sortOrder || (index + 1)
+      }))
+    
+    // 如果没有选项或选项少于2个，至少提供2个空选项
+    if (formData.options.length < 2) {
+      while (formData.options.length < 2) {
+        formData.options.push({ content: '', isCorrect: false, sortOrder: formData.options.length + 1 })
+      }
+    }
+  } else if (isChoice && row.answers && row.answers.length > 0) {
+    // 兼容旧数据：从answers加载选项（旧版本可能没有options字段）
+    formData.options = row.answers.map((answer, index) => ({
+      content: answer.content || '',
+      isCorrect: answer.isCorrect || false,
+      sortOrder: answer.sortOrder || (index + 1)
+    }))
+    
+    if (formData.options.length < 2) {
+      while (formData.options.length < 2) {
+        formData.options.push({ content: '', isCorrect: false, sortOrder: formData.options.length + 1 })
+      }
+    }
+  } else {
+    // 非选择题：初始化默认选项数组
+    formData.options = [
+      { content: '', isCorrect: false, sortOrder: 1 },
+      { content: '', isCorrect: false, sortOrder: 2 }
+    ]
+  }
+  
+  // 加载图片
+  formData.images = row.images?.map(img => ({
+    imagePath: img.imagePath,
+    imageName: img.imageName
+  })) || []
+  
   Object.assign(formData, {
     id: row.id,
-    content: row.content,
+    content: row.content || '',
     subject: row.subject,
     typeId: row.typeId,
     difficultyId: row.difficultyId,
     knowledgePoint: row.knowledgePoint || '',
     analysis: row.analysis || '',
-    answerContent: getQuestionAnswer(row.answers),
-    answerType: row.answers?.[0]?.answerType || 'number',
+    answerContent: isChoice ? '' : getQuestionAnswer(row),
+    answerType: isChoice ? (row.typeId === 1 ? 'single' : 'multiple') : (row.answers?.[0]?.answerType || 'number'),
     createdBy: userStore.userInfo?.id
   })
   isEditing.value = true
@@ -696,30 +855,98 @@ const handleSubmit = async () => {
       subject = newSubject.value
     }
 
+    // 验证选择题选项
+    if (isChoiceQuestion.value) {
+      // 检查至少2个选项
+      const validOptions = formData.options.filter(opt => opt.content.trim() !== '')
+      if (validOptions.length < 2) {
+        ElMessage.error('选择题至少需要2个有效选项')
+        return
+      }
+      
+      // 检查至少有一个正确答案
+      const hasCorrectAnswer = formData.options.some(opt => opt.isCorrect && opt.content.trim() !== '')
+      if (!hasCorrectAnswer) {
+        ElMessage.error('请至少标记一个正确答案')
+        return
+      }
+    }
+
     // 构建符合后端要求的题目数据
-    const questionData = {
-      content: formData.content,
-      subject: subject,
-      typeId: formData.typeId,
-      difficultyId: formData.difficultyId,
-      knowledgePoint: formData.knowledgePoint,
-      analysis: formData.analysis,
-      answers: [
-        {
-          content: formData.answerContent,
-          answerType: formData.answerType,
-          isCorrect: true,
-          sortOrder: 1
-        }
-      ],
-      createdBy: userStore.userInfo?.id
+    let questionData
+    if (isChoiceQuestion.value) {
+      // 选择题：使用新的选择题API格式
+      const validOptions = formData.options.filter(opt => opt.content.trim() !== '')
+      const correctAnswerIndices = validOptions
+        .map((opt, idx) => ({ opt, idx }))
+        .filter(({ opt }) => opt.isCorrect)
+        .map(({ idx }) => idx)
+      
+      const correctAnswers = correctAnswerIndices.map(idx => String.fromCharCode(65 + idx))
+      
+      questionData = {
+        typeId: formData.typeId,
+        difficultyId: formData.difficultyId,
+        subject: subject,
+        knowledgePoint: formData.knowledgePoint,
+        content: formData.content,
+        analysis: formData.analysis,
+        createdBy: userStore.userInfo?.id,
+        options: validOptions.map((opt, index) => ({
+          optionKey: String.fromCharCode(65 + index),
+          content: opt.content.trim(),
+          sortOrder: opt.sortOrder || (index + 1)
+        })),
+        correctAnswers: correctAnswers,
+        images: formData.images.filter(img => img).map(img => ({
+          imagePath: img.imagePath,
+          imageName: img.imageName
+        }))
+      }
+    } else {
+      // 非选择题：使用通用API格式
+      questionData = {
+        content: formData.content,
+        subject: subject,
+        typeId: formData.typeId,
+        difficultyId: formData.difficultyId,
+        knowledgePoint: formData.knowledgePoint,
+        analysis: formData.analysis,
+        answers: [
+          {
+            content: formData.answerContent,
+            answerType: formData.answerType,
+            isCorrect: true,
+            sortOrder: 1
+          }
+        ],
+        images: formData.images.filter(img => img).map(img => ({
+          imagePath: img.imagePath,
+          imageName: img.imageName
+        })),
+        createdBy: userStore.userInfo?.id
+      }
     }
 
     if (isEditing.value) {
-      await questionApi.updateQuestion(formData.id, questionData)
+      // 更新题目
+      if (isChoiceQuestion.value) {
+        await questionApi.updateChoiceQuestion(formData.id, questionData)
+      } else {
+        await questionApi.updateQuestion(formData.id, questionData)
+      }
       ElMessage.success('题目修改成功')
     } else {
-      await questionApi.addQuestion(questionData)
+      // 创建题目
+      if (isChoiceQuestion.value) {
+        if (formData.typeId === 1) {
+          await questionApi.createSingleChoiceQuestion(questionData)
+        } else {
+          await questionApi.createMultipleChoiceQuestion(questionData)
+        }
+      } else {
+        await questionApi.addQuestion(questionData)
+      }
       ElMessage.success('题目添加成功')
     }
 
@@ -743,6 +970,30 @@ const handleNewSubject = () => {
   }
 }
 
+// 添加选项
+const addOption = () => {
+  if (formData.options.length < 8) {
+    formData.options.push({
+      content: '',
+      isCorrect: false,
+      sortOrder: formData.options.length + 1
+    })
+  }
+}
+
+// 删除选项
+const removeOption = (index) => {
+  if (formData.options.length > 2) {
+    formData.options.splice(index, 1)
+    // 重新排序
+    formData.options.forEach((opt, idx) => {
+      opt.sortOrder = idx + 1
+    })
+  } else {
+    ElMessage.warning('选择题至少需要2个选项')
+  }
+}
+
 // 重置表单
 const resetForm = () => {
   Object.assign(formData, {
@@ -755,9 +1006,14 @@ const resetForm = () => {
     analysis: '',
     answerContent: '',
     answerType: 'number',
+    options: [
+      { content: '', isCorrect: false, sortOrder: 1 },
+      { content: '', isCorrect: false, sortOrder: 2 }
+    ],
     createdBy: userStore.userInfo?.id
   })
   newSubject.value = ''
+  formData.images = []
   isEditing.value = false
   questionFormRef.value?.clearValidate()
 }
@@ -811,6 +1067,11 @@ const formatDate = (dateString) => {
   } catch (error) {
     return dateString
   }
+}
+
+// 添加图片
+const addImage = () => {
+  formData.images.push(null)
 }
 
 onMounted(() => {
@@ -971,5 +1232,61 @@ onMounted(() => {
 
 :deep(.el-table .cell) {
   word-break: break-word;
+}
+
+/* 选择题选项管理样式 */
+.options-container {
+  width: 100%;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.option-item :deep(.el-checkbox) {
+  margin-right: 10px;
+}
+
+.option-item :deep(.el-input) {
+  flex: 1;
+}
+
+.option-item :deep(.el-checkbox) {
+  margin-right: 10px;
+}
+
+.images-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.image-item {
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.question-images {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.question-image-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.question-image-thumb:hover {
+  border-color: #409eff;
 }
 </style>

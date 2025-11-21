@@ -416,7 +416,6 @@ onMounted(() => {
 
       <!-- 学生列表表格 -->
       <el-table :data="currentPageStudents" v-loading="loading" style="width: 100%">
-        <el-table-column type="index" label="序号" width="60" align="center" fixed="left" />
         <el-table-column prop="id" label="学生ID" width="100" align="center" fixed="left" />
         <el-table-column prop="username" label="用户名" width="150" fixed="left" />
         <el-table-column prop="userClass" label="班级" width="150" fixed="left">
@@ -496,7 +495,6 @@ onMounted(() => {
     <!-- 学生试卷对话框 -->
     <el-dialog v-model="showPapersDialog" :title="`${selectedStudent?.username}的试卷列表`" width="800px">
       <el-table :data="studentPapers" v-loading="papersLoading">
-        <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="id" label="试卷ID" width="100" />
         <el-table-column prop="title" label="试卷标题" />
         <el-table-column prop="totalQuestions" label="题目数量" width="100" />
@@ -549,7 +547,7 @@ onMounted(() => {
             <el-descriptions-item label="得分">{{ currentPaperDetail.paper.score }}</el-descriptions-item>
             <el-descriptions-item label="用时">{{ currentPaperDetail.paper.timeSpent }}秒</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(currentPaperDetail.paper.createdAt)
-              }}</el-descriptions-item>
+            }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
 
@@ -561,7 +559,6 @@ onMounted(() => {
             </div>
           </template>
           <el-table :data="currentPaperDetail.questions" style="width: 100%">
-            <el-table-column type="index" label="序号" width="60" align="center" />
             <el-table-column prop="id" label="题目ID" width="80" align="center" />
             <el-table-column prop="content" label="题目内容" min-width="200" />
             <el-table-column label="类型" width="120">

@@ -56,7 +56,6 @@
       </template>
 
       <el-table :data="currentPagePapers" v-loading="loading" style="width: 100%">
-        <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="id" label="试卷ID" width="100" align="center" />
         <el-table-column prop="title" label="试卷标题" min-width="200" />
         <el-table-column prop="studentId" label="学生ID" width="100" align="center" />
@@ -106,6 +105,13 @@
           <el-input v-model="paperForm.title" placeholder="请输入试卷标题，如：三年级数学期中测试" />
         </el-form-item>
 
+        <!-- 新增科目选择 -->
+        <el-form-item label="科目" prop="subject">
+          <el-select v-model="paperForm.subject" placeholder="请选择科目" style="width: 100%">
+            <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
+          </el-select>
+        </el-form-item>
+
         <!-- 发布范围选择 -->
         <el-form-item label="发布范围" prop="targetType">
           <el-radio-group v-model="paperForm.targetType" @change="handleTargetTypeChange">
@@ -144,13 +150,21 @@
             <!-- 随机选择控件 -->
             <div class="random-selector" v-if="availableQuestions.length > 0">
               <el-form :model="randomSelectForm" inline>
-                <el-form-item label="随机选择">
+                <el-form-item label="数量">
                   <el-input-number v-model="randomSelectForm.count" :min="1" :max="availableQuestions.length"
-                    size="small" style="width: 100px" />
+                    size="small" style="width: 80px" />
+                </el-form-item>
+
+                <!-- 新增科目筛选 -->
+                <el-form-item label="科目">
+                  <el-select v-model="randomSelectForm.subject" clearable size="small" style="width: 80px">
+                    <el-option label="不限" value=""></el-option>
+                    <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
+                  </el-select>
                 </el-form-item>
 
                 <el-form-item label="难度">
-                  <el-select v-model="randomSelectForm.difficulty" clearable size="small" style="width: 100px">
+                  <el-select v-model="randomSelectForm.difficulty" clearable size="small" style="width: 80px">
                     <el-option label="不限" value=""></el-option>
                     <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
                       :value="difficulty.id" />
@@ -158,7 +172,7 @@
                 </el-form-item>
 
                 <el-form-item label="类型">
-                  <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 120px">
+                  <el-select v-model="randomSelectForm.type" clearable size="small" style="width: 80px">
                     <el-option label="不限" value=""></el-option>
                     <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
                   </el-select>
@@ -177,11 +191,6 @@
                 <div class="question-item" v-for="(question, index) in availableQuestions" :key="question.id">
                   <el-checkbox :label="question.id">
                     <div class="question-content">
-                      <!-- 添加序号显示 -->
-                      <div class="question-header">
-                        <span class="question-index">#{{ index + 1 }}</span>
-                        <span class="question-id">ID: {{ question.id }}</span>
-                      </div>
                       <span class="question-text">{{ question.content }}</span>
                       <div class="question-meta">
                         <el-tag size="small" :type="getTypeTagType(question.typeId)">
@@ -190,6 +199,9 @@
                         <el-tag size="small" :type="getDifficultyTagType(question.difficultyId)">
                           {{ getDifficultyName(question.difficultyId) }}
                         </el-tag>
+                        <!-- 新增科目显示 -->
+                        <el-tag size="small" style="color: #409eff;">{{ question.subject || '数学'
+                        }}</el-tag>
                         <span class="answer">答案: {{ getQuestionAnswer(question.answers) }}</span>
                       </div>
                     </div>
@@ -220,6 +232,8 @@
           <el-descriptions-item label="试卷ID">{{ currentPaperDetail.paper.id }}</el-descriptions-item>
           <el-descriptions-item label="学生">{{ getStudentName(currentPaperDetail.paper.studentId)
           }}</el-descriptions-item>
+          <!-- 新增科目显示 -->
+          <el-descriptions-item label="科目">{{ currentPaperDetail.paper.subject || '数学' }}</el-descriptions-item>
           <el-descriptions-item label="题目数量">{{ currentPaperDetail.paper.totalQuestions }}</el-descriptions-item>
           <el-descriptions-item label="得分">
             <span v-if="currentPaperDetail.paper.score !== null && currentPaperDetail.paper.score !== undefined">
@@ -232,9 +246,14 @@
 
         <h4>题目列表</h4>
         <el-table :data="currentPaperDetail.questions" style="width: 100%">
-          <el-table-column type="index" label="序号" width="60" align="center" />
           <el-table-column prop="id" label="题目ID" width="80" />
           <el-table-column prop="content" label="题目内容" />
+          <!-- 新增科目列 -->
+          <el-table-column prop="subject" label="科目" width="100">
+            <template #default="{ row }">
+              <el-tag size="small">{{ row.subject || '数学' }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="类型" width="100">
             <template #default="{ row }">
               <el-tag size="small" :type="getTypeTagType(row.typeId)">
@@ -289,6 +308,7 @@ const difficultyLevels = ref([])
 // 搜索和筛选条件
 const searchTitle = ref('')
 const filterStudent = ref('')
+const filterSubject = ref('') // 新增科目筛选
 
 // 分页配置
 const pagination = reactive({
@@ -302,16 +322,26 @@ const paperFormRef = ref()
 // 表单数据结构
 const paperForm = reactive({
   title: '',
+  subject: '数学', // 新增科目字段
   targetType: 'student', // student, class
   studentId: null,       // 单个学生ID
   classNames: [],        // 班级名称数组
   questionIds: []
 })
 
+// 计算科目列表
+const subjectList = computed(() => {
+  const subjects = new Set(availableQuestions.value.map(question => question.subject).filter(Boolean))
+  return Array.from(subjects).sort()
+})
+
 // 验证规则
 const paperRules = {
   title: [
     { required: true, message: '请输入试卷标题', trigger: 'blur' }
+  ],
+  subject: [
+    { required: true, message: '请选择科目', trigger: 'change' }
   ],
   studentId: [
     {
@@ -442,6 +472,11 @@ const applyFilters = () => {
     )
   }
 
+  // 科目筛选
+  if (filterSubject.value) {
+    filtered = filtered.filter(paper => paper.subject === filterSubject.value)
+  }
+
   // 学生筛选
   if (filterStudent.value) {
     filtered = filtered.filter(paper => paper.studentId == filterStudent.value)
@@ -461,6 +496,7 @@ const handleSearch = () => {
 const resetSearch = () => {
   searchTitle.value = ''
   filterStudent.value = ''
+  filterSubject.value = '' // 重置科目筛选
   applyFilters()
 }
 
@@ -517,6 +553,7 @@ const loadQuestionsWithAnswers = async () => {
 // 随机选择表单
 const randomSelectForm = reactive({
   count: 5,
+  subject: '', // 新增科目筛选
   difficulty: '',
   type: ''
 })
@@ -524,6 +561,13 @@ const randomSelectForm = reactive({
 // 随机选择题目方法
 const randomSelectQuestions = () => {
   let filteredQuestions = [...availableQuestions.value]
+
+  // 科目筛选
+  if (randomSelectForm.subject) {
+    filteredQuestions = filteredQuestions.filter(q =>
+      q.subject === randomSelectForm.subject
+    )
+  }
 
   if (randomSelectForm.difficulty) {
     filteredQuestions = filteredQuestions.filter(q =>
@@ -588,6 +632,7 @@ const handleGeneratePaper = async () => {
     const generatePromises = targetStudents.map(student => {
       const paperData = {
         title: paperForm.title,
+        subject: paperForm.subject, // 添加科目信息
         studentId: student.id,
         questionIds: paperForm.questionIds
       }
@@ -601,6 +646,7 @@ const handleGeneratePaper = async () => {
     // 重置表单
     Object.assign(paperForm, {
       title: '',
+      subject: '数学',
       targetType: 'student',
       studentId: null,
       classNames: [],
@@ -774,20 +820,6 @@ onMounted(() => {
 
 .question-content {
   margin-left: 8px;
-}
-
-/* 添加题目序号样式 */
-.question-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.question-index {
-  font-weight: bold;
-  color: #409eff;
-  font-size: 14px;
 }
 
 .question-id {

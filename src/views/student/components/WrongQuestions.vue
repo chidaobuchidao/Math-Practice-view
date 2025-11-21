@@ -72,7 +72,14 @@
           <el-table-column label="题目内容">
             <template #default="{ row }">
               <div class="question-content">
-                <div class="question-text">{{ row.content }}</div>
+                <div class="question-text" v-html="row.content"></div>
+                <!-- 显示题目图片 -->
+                <div v-if="row.images && row.images.length > 0" class="question-images-list">
+                  <img v-for="(img, idx) in row.images" :key="idx" 
+                       :src="getImageUrl(img.imagePath || img.image_path)" 
+                       class="question-image-thumb" 
+                       @click="previewImage(img.imagePath || img.image_path)" />
+                </div>
                 <div class="question-meta">
                   <el-tag size="small" :type="getTypeTagType(row.type_id || row.type)">
                     {{ getTypeText(row.type_id || row.type) }}
@@ -80,8 +87,8 @@
                   <el-tag size="small" :type="getDifficultyTagType(row.difficulty_id || row.difficulty)">
                     {{ getDifficultyText(row.difficulty_id || row.difficulty) }}
                   </el-tag>
-                  <span class="wrong-answer">我的答案: {{ formatStudentAnswer(row.wrong_answer) }}</span>
-                  <span class="correct-answer">正确答案: {{ formatCorrectAnswer(row.correct_answer || row.answer) }}</span>
+                  <span class="wrong-answer">我的答案: {{ formatStudentAnswerWithContent(row) }}</span>
+                  <span class="correct-answer">正确答案: {{ formatCorrectAnswerWithContent(row) }}</span>
                   <span class="record-time">记录时间: {{ formatDate(row.created_at) }}</span>
                 </div>
               </div>
@@ -121,16 +128,49 @@
             {{ currentReviewQuestion.content }}
           </div>
 
-          <div class="answer-input">
-            <el-input-number v-model="reviewAnswer" :precision="2" placeholder="请输入你的答案" style="width: 200px;"
-              :controls="false" />
+          <!-- 显示题目图片 -->
+          <div v-if="currentReviewQuestion.images && currentReviewQuestion.images.length > 0" class="question-images" style="margin: 15px 0;">
+            <img v-for="(img, idx) in currentReviewQuestion.images" :key="idx" 
+                 :src="getImageUrl(img.imagePath)" 
+                 class="question-image" 
+                 @click="previewImage(img.imagePath)" />
+          </div>
+
+          <!-- 选择题：显示选项 -->
+          <div v-if="isChoiceQuestion(currentReviewQuestion)" class="choice-options-section" style="margin: 20px 0;">
+            <div class="options-label" style="font-weight: bold; margin-bottom: 10px;">选项：</div>
+            <div v-for="option in getSortedOptions(currentReviewQuestion.options)" :key="option.optionKey" 
+                 class="option-item" 
+                 :class="{ 'correct-option': isCorrectOption(option.optionKey, currentReviewQuestion) }"
+                 style="padding: 8px; margin: 5px 0; border: 1px solid #e4e7ed; border-radius: 4px;">
+              <span class="option-key" style="font-weight: bold; margin-right: 8px;">{{ option.optionKey }}.</span>
+              <span v-html="option.content"></span>
+            </div>
+          </div>
+
+          <div class="answer-input" style="margin: 20px 0;">
+            <el-input v-if="!isChoiceQuestion(currentReviewQuestion)" 
+                      v-model="reviewAnswer" 
+                      placeholder="请输入你的答案" 
+                      style="width: 200px;" />
+            <!-- 选择题：使用下拉选择 -->
+            <el-select v-else 
+                       v-model="reviewAnswer" 
+                       placeholder="请选择答案" 
+                       style="width: 200px;">
+              <el-option 
+                v-for="option in getSortedOptions(currentReviewQuestion.options)" 
+                :key="option.optionKey" 
+                :label="`${option.optionKey}. ${option.content}`" 
+                :value="option.optionKey" />
+            </el-select>
           </div>
 
           <div class="review-actions" style="margin-top: 20px;">
-            <el-button @click="checkAnswer" type="primary" :disabled="reviewAnswer === null">
+            <el-button @click="checkAnswer" type="primary" :disabled="!reviewAnswer || reviewAnswer.trim() === ''">
               检查答案
             </el-button>
-            <el-button @click="showAnswer" type="link">
+            <el-button @click="showAnswer" type="text">
               显示答案
             </el-button>
           </div>
@@ -139,8 +179,15 @@
             <el-alert :title="resultMessage" :type="isAnswerCorrect ? 'success' : 'error'" :closable="false" show-icon>
             </el-alert>
             <div v-if="!isAnswerCorrect" style="margin-top: 10px;">
-              <span style="color: #67c23a;">正确答案: {{ formatCorrectAnswer(currentReviewQuestion.correct_answer ||
-                currentReviewQuestion.answer) }}</span>
+              <div style="color: #67c23a; font-weight: bold; margin-bottom: 5px;">
+                正确答案: {{ formatCorrectAnswer(currentReviewQuestion.correct_answer || currentReviewQuestion.answer) }}
+              </div>
+              <!-- 选择题：显示正确答案对应的选项内容 -->
+              <div v-if="isChoiceQuestion(currentReviewQuestion)" style="margin-top: 8px; padding: 8px; background: #f0f9ff; border-radius: 4px;">
+                <div v-for="answerKey in getCorrectAnswerKeys(currentReviewQuestion)" :key="answerKey" style="margin: 5px 0;">
+                  <strong>{{ answerKey }}.</strong> {{ getOptionContent(answerKey, currentReviewQuestion.options) }}
+                </div>
+              </div>
             </div>
             <div v-if="currentReviewQuestion.analysis"
               style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
@@ -166,6 +213,8 @@ import { Delete, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { wrongQuestionApi } from '@/api/wrongQuestion'
 import { paperApi } from '@/api/paper'
+import { questionApi } from '@/api/question'
+import request from '@/utils/request'
 import { getTypeName as utilGetTypeName, getTypeTagType as utilGetTypeTagType, getDifficultyName as utilGetDifficultyName, getDifficultyTagType as utilGetDifficultyTagType, getTypeTextByKey, getTypeTagTypeByKey, getDifficultyTextByKey, getDifficultyTagTypeByKey } from '@/utils/type'
 
 const props = defineProps({
@@ -191,7 +240,7 @@ const showReviewDialog = ref(false)
 const reviewQuestions = ref([])
 const reviewQuestionIndex = ref(0)
 const currentReviewQuestion = ref(null)
-const reviewAnswer = ref(null)
+const reviewAnswer = ref('')
 const showResult = ref(false)
 const isAnswerCorrect = ref(false)
 const resultMessage = ref('')
@@ -292,6 +341,30 @@ const loadWrongQuestions = async () => {
     const response = await wrongQuestionApi.getWrongQuestions(props.studentId)
     wrongQuestions.value = response.data || []
 
+    // 为选择题加载选项和图片（如果后端没有返回）
+    for (const question of wrongQuestions.value) {
+      const typeId = question.type_id || question.type
+      const needsOptions = (typeId === 1 || typeId === 2) && (!question.options || question.options.length === 0)
+      const needsImages = !question.images || question.images.length === 0
+      
+      // 如果需要加载选项或图片，则获取题目详情
+      if (needsOptions || needsImages) {
+        try {
+          const detailResponse = await questionApi.getQuestionById(question.question_id || question.id)
+          if (detailResponse.data) {
+            if (needsOptions) {
+              question.options = detailResponse.data.options || []
+            }
+            if (needsImages) {
+              question.images = detailResponse.data.images || []
+            }
+          }
+        } catch (error) {
+          console.warn('加载题目详情失败:', error)
+        }
+      }
+    }
+
     console.log('加载的错题数据:', wrongQuestions.value)
 
     // 数据更新会自动触发 watch，从而调用 forceRefreshChart()
@@ -303,61 +376,122 @@ const loadWrongQuestions = async () => {
   }
 }
 
-// 格式化学生答案显示
+// 格式化学生答案显示（带选项内容）
+const formatStudentAnswerWithContent = (question) => {
+  const answer = question.wrong_answer
+  if (answer === null || answer === undefined || answer === '') return '未作答'
+  
+  // 如果是选择题，显示选项键和内容
+  if (isChoiceQuestion(question) && question.options && question.options.length > 0) {
+    const answerKeys = Array.isArray(answer) ? answer : (typeof answer === 'string' && answer.includes(',') ? answer.split(',').map(s => s.trim()) : [String(answer)])
+    const answerTexts = answerKeys.map(key => {
+      const option = question.options.find(opt => (opt.optionKey || opt.option_key) === key)
+      return option ? `${key}. ${option.content}` : key
+    })
+    return answerTexts.join(', ')
+  }
+  
+  return String(answer)
+}
+
+// 格式化正确答案显示（带选项内容）
+const formatCorrectAnswerWithContent = (question) => {
+  const answer = question.correct_answer || question.answer
+  if (answer === null || answer === undefined || answer === '') return '无答案'
+  
+  // 如果是选择题，显示选项键和内容
+  if (isChoiceQuestion(question) && question.options && question.options.length > 0) {
+    const answerKeys = Array.isArray(answer) ? answer : (typeof answer === 'string' && answer.includes(',') ? answer.split(',').map(s => s.trim()) : [String(answer)])
+    const answerTexts = answerKeys.map(key => {
+      const option = question.options.find(opt => (opt.optionKey || opt.option_key) === key)
+      return option ? `${key}. ${option.content}` : key
+    })
+    return answerTexts.join(', ')
+  }
+  
+  // 如果是数组，转换为逗号分隔的字符串
+  if (Array.isArray(answer)) {
+    return answer.join(', ')
+  }
+  return String(answer)
+}
+
+// 格式化学生答案显示（简单版本，用于其他地方）
 const formatStudentAnswer = (answer) => {
-  if (!answer) return '未作答'
-  if (typeof answer === 'number') return answer
-  if (typeof answer === 'string') {
-    // 如果是小数，保留2位
-    const num = parseFloat(answer)
-    if (!isNaN(num)) {
-      return num.toFixed(2)
-    }
-  }
-  return answer
+  if (answer === null || answer === undefined || answer === '') return '未作答'
+  return String(answer)
 }
 
-// 格式化正确答案显示
+// 格式化正确答案显示（简单版本，用于其他地方）
 const formatCorrectAnswer = (answer) => {
-  if (!answer) return '无答案'
-  if (typeof answer === 'number') return answer
-  if (typeof answer === 'string') {
-    // 如果是小数，保留2位
-    const num = parseFloat(answer)
-    if (!isNaN(num)) {
-      return num.toFixed(2)
-    }
+  if (answer === null || answer === undefined || answer === '') return '无答案'
+  if (Array.isArray(answer)) {
+    return answer.join(', ')
   }
-  return answer
+  return String(answer)
 }
 
-// 解析答案（支持分数格式）
+// 解析答案（支持多种格式：数字、分数、文本等）
+// 返回字符串格式，用于比较
 const parseAnswer = (answer) => {
-  if (!answer) return null
+  if (answer === null || answer === undefined || answer === '') return null
 
-  // 如果是数字，直接返回
-  if (typeof answer === 'number') return answer
+  // 如果是数字，转换为字符串
+  if (typeof answer === 'number') {
+    return String(answer)
+  }
 
-  // 如果是字符串
+  // 如果是字符串，直接返回（去除首尾空格）
   if (typeof answer === 'string') {
-    // 处理分数格式，如 "5/6"
-    if (answer.includes('/')) {
-      const parts = answer.split('/')
-      if (parts.length === 2) {
-        const numerator = parseFloat(parts[0])
-        const denominator = parseFloat(parts[1])
-        if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-          return numerator / denominator
-        }
+    return answer.trim()
+  }
+
+  // 其他类型转换为字符串
+  return String(answer)
+}
+
+// 比较答案（支持字符串、数字、分数等多种格式）
+const compareAnswers = (studentAnswer, correctAnswer) => {
+  if (!studentAnswer || !correctAnswer) return false
+
+  // 转换为字符串并去除首尾空格
+  const studentStr = String(studentAnswer).trim()
+  const correctStr = String(correctAnswer).trim()
+
+  // 精确匹配（区分大小写）
+  if (studentStr === correctStr) {
+    return true
+  }
+
+  // 对于数字答案，进行数值比较（考虑浮点数精度）
+  const studentNum = parseFloat(studentStr)
+  const correctNum = parseFloat(correctStr)
+  if (!isNaN(studentNum) && !isNaN(correctNum)) {
+    // 如果都是有效数字，进行数值比较（考虑精度）
+    return Math.abs(studentNum - correctNum) < 0.01
+  }
+
+  // 对于分数格式，进行分数比较
+  if (studentStr.includes('/') && correctStr.includes('/')) {
+    const studentParts = studentStr.split('/')
+    const correctParts = correctStr.split('/')
+    if (studentParts.length === 2 && correctParts.length === 2) {
+      const studentNum = parseFloat(studentParts[0])
+      const studentDen = parseFloat(studentParts[1])
+      const correctNum = parseFloat(correctParts[0])
+      const correctDen = parseFloat(correctParts[1])
+      if (!isNaN(studentNum) && !isNaN(studentDen) && !isNaN(correctNum) && !isNaN(correctDen) && studentDen !== 0 && correctDen !== 0) {
+        return Math.abs(studentNum / studentDen - correctNum / correctDen) < 0.01
       }
     }
-
-    // 尝试解析为数字
-    const num = parseFloat(answer)
-    if (!isNaN(num)) return num
   }
 
-  return null
+  // 不区分大小写的字符串比较
+  if (studentStr.toLowerCase() === correctStr.toLowerCase()) {
+    return true
+  }
+
+  return false
 }
 
 // 强制刷新图表（处理容器被销毁重建的情况）
@@ -577,12 +711,77 @@ const generatePracticePaper = async () => {
   }
 }
 
+// 判断是否为选择题
+const isChoiceQuestion = (question) => {
+  const typeId = question.type_id || question.type
+  return typeId === 1 || typeId === 2
+}
+
+// 获取排序后的选项
+const getSortedOptions = (options) => {
+  if (!options || !Array.isArray(options)) return []
+  return [...options].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+}
+
+// 判断是否为正确答案选项
+const isCorrectOption = (optionKey, question) => {
+  const correctAnswer = question.correct_answer || question.answer
+  if (!correctAnswer) return false
+  if (Array.isArray(correctAnswer)) {
+    return correctAnswer.includes(optionKey)
+  }
+  return String(correctAnswer) === String(optionKey)
+}
+
+// 获取正确答案的选项键列表
+const getCorrectAnswerKeys = (question) => {
+  const correctAnswer = question.correct_answer || question.answer
+  if (!correctAnswer) return []
+  if (Array.isArray(correctAnswer)) {
+    return correctAnswer
+  }
+  if (typeof correctAnswer === 'string' && correctAnswer.includes(',')) {
+    return correctAnswer.split(',').map(s => s.trim())
+  }
+  return [String(correctAnswer)]
+}
+
+// 根据选项键获取选项内容
+const getOptionContent = (optionKey, options) => {
+  if (!options || !Array.isArray(options)) return ''
+  const option = options.find(opt => opt.optionKey === optionKey || opt.option_key === optionKey)
+  return option?.content || ''
+}
+
+// 获取图片完整URL
+const getImageUrl = (path) => {
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${request.defaults.baseURL}${path}`
+}
+
+// 预览图片
+const previewImage = (path) => {
+  window.open(getImageUrl(path), '_blank')
+}
+
 // 复习题目
-const reviewQuestion = (question) => {
+const reviewQuestion = async (question) => {
+  // 如果是选择题且没有选项数据，加载题目详情
+  if (isChoiceQuestion(question) && (!question.options || question.options.length === 0)) {
+    try {
+      const detailResponse = await questionApi.getQuestionById(question.question_id || question.id)
+      if (detailResponse.data) {
+        Object.assign(question, detailResponse.data)
+      }
+    } catch (error) {
+      console.warn('加载题目详情失败:', error)
+    }
+  }
+  
   reviewQuestions.value = [question]
   reviewQuestionIndex.value = 0
   currentReviewQuestion.value = question
-  reviewAnswer.value = null
+  reviewAnswer.value = ''
   showResult.value = false
   isAnswerCorrect.value = false
   showReviewDialog.value = true
@@ -590,21 +789,21 @@ const reviewQuestion = (question) => {
 
 // 检查答案
 const checkAnswer = () => {
-  if (reviewAnswer.value === null) {
+  if (!reviewAnswer.value || reviewAnswer.value.trim() === '') {
     ElMessage.warning('请输入答案')
     return
   }
 
-  // 获取正确答案并解析
-  const correctAnswerValue = parseAnswer(currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer)
+  // 获取正确答案
+  const correctAnswer = currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer
 
-  if (correctAnswerValue === null) {
-    ElMessage.error('无法解析正确答案')
+  if (!correctAnswer) {
+    ElMessage.error('无法获取正确答案')
     return
   }
 
-  // 比较答案（考虑浮点数精度）
-  isAnswerCorrect.value = Math.abs(reviewAnswer.value - correctAnswerValue) < 0.01
+  // 使用新的比较函数进行答案比较
+  isAnswerCorrect.value = compareAnswers(reviewAnswer.value, correctAnswer)
 
   if (isAnswerCorrect.value) {
     resultMessage.value = '回答正确！太棒了！'
@@ -622,9 +821,10 @@ const checkAnswer = () => {
 
 // 显示答案
 const showAnswer = () => {
-  const correctAnswerValue = parseAnswer(currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer)
-  if (correctAnswerValue !== null) {
-    reviewAnswer.value = correctAnswerValue
+  const correctAnswer = currentReviewQuestion.value.correct_answer || currentReviewQuestion.value.answer
+  if (correctAnswer !== null && correctAnswer !== undefined) {
+    // 直接使用字符串格式的答案
+    reviewAnswer.value = String(correctAnswer)
   }
   isAnswerCorrect.value = false
   resultMessage.value = '这是正确答案，请记住它！'
@@ -636,7 +836,7 @@ const nextQuestion = () => {
   if (reviewQuestionIndex.value < reviewQuestions.value.length - 1) {
     reviewQuestionIndex.value++
     currentReviewQuestion.value = reviewQuestions.value[reviewQuestionIndex.value]
-    reviewAnswer.value = null
+    reviewAnswer.value = ''
     showResult.value = false
     isAnswerCorrect.value = false
   } else {
@@ -938,5 +1138,67 @@ onUnmounted(() => {
   padding: 15px;
   background-color: #f8f9fa;
   border-radius: 8px;
+}
+
+.choice-options-section {
+  margin: 20px 0;
+}
+
+.option-item {
+  padding: 8px;
+  margin: 5px 0;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.option-item:hover {
+  background-color: #f5f7fa;
+}
+
+.option-item.correct-option {
+  background-color: #f0f9ff;
+  border-color: #67c23a;
+}
+
+.question-images {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 15px 0;
+}
+
+.question-image {
+  max-width: 300px;
+  max-height: 300px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.question-image:hover {
+  border-color: #409eff;
+}
+
+.question-images-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.question-image-thumb {
+  max-width: 150px;
+  max-height: 150px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  object-fit: contain;
+}
+
+.question-image-thumb:hover {
+  border-color: #409eff;
+  transform: scale(1.05);
+  transition: all 0.3s;
 }
 </style>
