@@ -290,52 +290,50 @@
     </el-dialog>
 
     <!-- 自动生成题目对话框 -->
-    <el-dialog v-model="showAutoDialog" title="自动生成题目" width="600px">
+    <el-dialog v-model="showAutoDialog" title="自动生成题目" width="700px">
       <el-form :model="generateForm" :rules="generateRules" ref="generateFormRef" label-width="120px">
         <el-form-item label="题目数量" prop="count">
-          <el-input-number v-model="generateForm.count" :min="1" :max="50" placeholder="请输入生成题目数量"
+          <el-input-number v-model="generateForm.count" :min="1" :max="100" placeholder="请输入生成题目数量"
             style="width: 200px;" />
-          <div class="form-tip">单次最多生成50道题目</div>
+          <div class="form-tip">单次最多生成100道题目，生成的题目类型为计算题</div>
         </el-form-item>
 
-        <el-form-item label="科目" prop="subject">
-          <el-select v-model="generateForm.subject" placeholder="请选择科目" style="width: 100%">
-            <el-option v-for="subject in subjectList" :key="subject" :label="subject" :value="subject" />
-          </el-select>
+        <el-form-item label="运算类型" prop="operationTypes">
+          <el-checkbox-group v-model="generateForm.operationTypes">
+            <el-checkbox label="AddAndSub">加减法运算</el-checkbox>
+            <el-checkbox label="MulAndDiv">乘除法运算</el-checkbox>
+            <el-checkbox label="Mixed">混合运算</el-checkbox>
+          </el-checkbox-group>
+          <div class="form-tip">至少选择一种运算类型，可以多选以随机生成不同类型</div>
         </el-form-item>
 
-        <el-form-item label="题目类型" prop="typeId">
-          <el-select v-model="generateForm.typeId" placeholder="请选择题目类型" style="width: 100%">
-            <el-option v-for="type in questionTypes" :key="type.id" :label="type.name" :value="type.id" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="难度等级" prop="difficultyId">
-          <el-select v-model="generateForm.difficultyId" placeholder="请选择难度" style="width: 100%">
-            <el-option v-for="difficulty in difficultyLevels" :key="difficulty.id" :label="difficulty.name"
-              :value="difficulty.id" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="知识点" prop="knowledgePoint">
-          <el-input v-model="generateForm.knowledgePoint" placeholder="请输入知识点，如：四则运算" />
+        <el-form-item label="难度等级" prop="difficulties">
+          <el-checkbox-group v-model="generateForm.difficulties">
+            <el-checkbox label="easy">简单</el-checkbox>
+            <el-checkbox label="medium">中等</el-checkbox>
+            <el-checkbox label="hard">困难</el-checkbox>
+          </el-checkbox-group>
+          <div class="form-tip">至少选择一种难度，可以多选以随机生成不同难度</div>
         </el-form-item>
 
         <el-collapse v-model="activeCollapse" style="margin: 20px 0;">
           <el-collapse-item title="高级设置（数字范围）" name="advanced">
-            <el-form-item label="数字范围">
-              <el-input-number v-model="generateForm.numberRange.min" :min="1" :max="generateForm.numberRange.max" />
+            <el-form-item label="加减法范围">
+              <el-input-number v-model="generateForm.numberRange.addSubMin" :min="1" :max="generateForm.numberRange.addSubMax" style="width: 120px;" />
               <span style="margin: 0 10px;">至</span>
-              <el-input-number v-model="generateForm.numberRange.max" :min="generateForm.numberRange.min" :max="1000" />
+              <el-input-number v-model="generateForm.numberRange.addSubMax" :min="generateForm.numberRange.addSubMin" :max="1000" style="width: 120px;" />
             </el-form-item>
 
-            <el-form-item label="运算类型">
-              <el-checkbox-group v-model="generateForm.operations">
-                <el-checkbox label="addition">加法</el-checkbox>
-                <el-checkbox label="subtraction">减法</el-checkbox>
-                <el-checkbox label="multiplication">乘法</el-checkbox>
-                <el-checkbox label="division">除法</el-checkbox>
-              </el-checkbox-group>
+            <el-form-item label="乘法范围">
+              <el-input-number v-model="generateForm.numberRange.multiplicationMin" :min="1" :max="generateForm.numberRange.multiplicationMax" style="width: 120px;" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.multiplicationMax" :min="generateForm.numberRange.multiplicationMin" :max="100" style="width: 120px;" />
+            </el-form-item>
+
+            <el-form-item label="混合运算范围">
+              <el-input-number v-model="generateForm.numberRange.mixedMin" :min="1" :max="generateForm.numberRange.mixedMax" style="width: 120px;" />
+              <span style="margin: 0 10px;">至</span>
+              <el-input-number v-model="generateForm.numberRange.mixedMax" :min="generateForm.numberRange.mixedMin" :max="1000" style="width: 120px;" />
             </el-form-item>
           </el-collapse-item>
         </el-collapse>
@@ -343,17 +341,16 @@
         <el-form-item label="预览设置">
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="题目数量">{{ generateForm.count }}</el-descriptions-item>
-            <el-descriptions-item label="科目">
-              {{ generateForm.subject }}
-            </el-descriptions-item>
-            <el-descriptions-item label="题目类型">
-              {{ getSelectedTypeText() }}
+            <el-descriptions-item label="科目">数学（固定）</el-descriptions-item>
+            <el-descriptions-item label="题目类型">计算题（固定）</el-descriptions-item>
+            <el-descriptions-item label="运算类型">
+              {{ generateForm.operationTypes.length > 0 ? generateForm.operationTypes.map(t => getOperationTypeName(t)).join('、') : '未选择' }}
             </el-descriptions-item>
             <el-descriptions-item label="难度等级">
-              {{ getSelectedDifficultyText() }}
+              {{ generateForm.difficulties.length > 0 ? generateForm.difficulties.map(d => getDifficultyNameForGenerate(d)).join('、') : '未选择' }}
             </el-descriptions-item>
-            <el-descriptions-item label="数字范围">
-              {{ generateForm.numberRange.min }} - {{ generateForm.numberRange.max }}
+            <el-descriptions-item label="加减法范围">
+              {{ generateForm.numberRange.addSubMin }} - {{ generateForm.numberRange.addSubMax }}
             </el-descriptions-item>
           </el-descriptions>
         </el-form-item>
@@ -441,16 +438,19 @@ const formData = reactive({
 // 自动生成表单数据
 const generateForm = reactive({
   count: 10,
-  typeId: null,
-  difficultyId: null,
-  subject: '数学',
-  knowledgePoint: '四则运算',
+  operationTypes: ['AddAndSub'], // 运算类型：AddAndSub(加减法), MulAndDiv(乘除法), Mixed(混合运算)
+  difficulties: ['easy'], // 难度：easy(简单), medium(中等), hard(困难)
   createdBy: userStore.userInfo?.id,
   numberRange: {
-    min: 1,
-    max: 100
-  },
-  operations: ['addition', 'subtraction']
+    addSubMin: 1,
+    addSubMax: 100,
+    multiplicationMin: 1,
+    multiplicationMax: 12,
+    divisionMin: 1,
+    divisionMax: 12,
+    mixedMin: 1,
+    mixedMax: 100
+  }
 })
 
 // 计算属性
@@ -574,17 +574,6 @@ const getQuestionAnswer = (question) => {
   return correctAnswer?.content || '无答案'
 }
 
-// 获取选中的类型文本
-const getSelectedTypeText = () => {
-  const type = questionTypes.value.find(t => t.id === generateForm.typeId)
-  return type ? type.name : '未选择'
-}
-
-// 获取选中的难度文本
-const getSelectedDifficultyText = () => {
-  const difficulty = difficultyLevels.value.find(d => d.id === generateForm.difficultyId)
-  return difficulty ? difficulty.name : '未选择'
-}
 
 // 验证规则
 const questionRules = {
@@ -643,16 +632,31 @@ const questionRules = {
 const generateRules = {
   count: [
     { required: true, message: '请输入题目数量', trigger: 'blur' },
-    { type: 'number', min: 1, max: 50, message: '题目数量范围为1-50', trigger: 'blur' }
+    { type: 'number', min: 1, max: 100, message: '题目数量范围为1-100', trigger: 'blur' }
   ],
-  typeId: [
-    { required: true, message: '请选择题目类型', trigger: 'change' }
+  operationTypes: [
+    {
+      validator: (rule, value, callback) => {
+        if (!value || value.length === 0) {
+          callback(new Error('请至少选择一种运算类型'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
   ],
-  difficultyId: [
-    { required: true, message: '请选择难度等级', trigger: 'change' }
-  ],
-  subject: [
-    { required: true, message: '请输入科目', trigger: 'change' }
+  difficulties: [
+    {
+      validator: (rule, value, callback) => {
+        if (!value || value.length === 0) {
+          callback(new Error('请至少选择一种难度等级'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
   ]
 }
 
@@ -674,30 +678,41 @@ const handleGenerate = async () => {
     await generateFormRef.value.validate()
     generating.value = true
 
-    // 构建生成请求数据
+    // 构建符合后端接口要求的请求数据
     const requestData = {
       count: generateForm.count,
-      typeId: generateForm.typeId,
-      difficultyId: generateForm.difficultyId,
-      subject: generateForm.subject,
-      knowledgePoint: generateForm.knowledgePoint,
-      numberRange: generateForm.numberRange,
-      operations: generateForm.operations,
+      types: generateForm.operationTypes, // 运算类型列表：AddAndSub, MulAndDiv, Mixed
+      difficulties: generateForm.difficulties, // 难度列表：easy, medium, hard
+      numberRange: {
+        addSubMin: generateForm.numberRange.addSubMin || 1,
+        addSubMax: generateForm.numberRange.addSubMax || 100,
+        multiplicationMin: generateForm.numberRange.multiplicationMin || 1,
+        multiplicationMax: generateForm.numberRange.multiplicationMax || 12,
+        divisionMin: generateForm.numberRange.divisionMin || 1,
+        divisionMax: generateForm.numberRange.divisionMax || 12,
+        mixedMin: generateForm.numberRange.mixedMin || 1,
+        mixedMax: generateForm.numberRange.mixedMax || 100
+      },
       createdBy: userStore.userInfo?.id
     }
 
-    // 调用生成接口 - 后端接口待更新
-    // 目前暂时模拟生成过程
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 调用后端生成接口
+    const response = await questionApi.generateQuestions(requestData)
 
-    ElMessage.success(`成功生成 ${generateForm.count} 道题目`)
-    showAutoDialog.value = false
-    loadQuestions()
+    if (response.code === 200 || response.success) {
+      const generatedCount = response.data?.length || generateForm.count
+      ElMessage.success(`成功生成 ${generatedCount} 道题目`)
+      showAutoDialog.value = false
+      resetGenerateForm()
+      loadQuestions() // 重新加载题目列表
+    } else {
+      ElMessage.error(response.message || '生成题目失败')
+    }
 
   } catch (error) {
-    if (error.message) {
-      ElMessage.error('生成题目失败: ' + error.message)
-    }
+    console.error('生成题目失败:', error)
+    const errorMessage = error.response?.data?.message || error.message || '生成题目失败，请稍后重试'
+    ElMessage.error(errorMessage)
   } finally {
     generating.value = false
   }
@@ -707,17 +722,41 @@ const handleGenerate = async () => {
 const resetGenerateForm = () => {
   Object.assign(generateForm, {
     count: 10,
-    typeId: questionTypes.value[0]?.id || null,
-    difficultyId: difficultyLevels.value[0]?.id || null,
-    subject: '数学',
-    knowledgePoint: '四则运算',
+    operationTypes: ['AddAndSub'],
+    difficulties: ['easy'],
+    createdBy: userStore.userInfo?.id,
     numberRange: {
-      min: 1,
-      max: 100
-    },
-    operations: ['addition', 'subtraction']
+      addSubMin: 1,
+      addSubMax: 100,
+      multiplicationMin: 1,
+      multiplicationMax: 12,
+      divisionMin: 1,
+      divisionMax: 12,
+      mixedMin: 1,
+      mixedMax: 100
+    }
   })
   generateFormRef.value?.clearValidate()
+}
+
+// 获取运算类型显示名称
+const getOperationTypeName = (type) => {
+  const typeMap = {
+    'AddAndSub': '加减法运算',
+    'MulAndDiv': '乘除法运算',
+    'Mixed': '混合运算'
+  }
+  return typeMap[type] || type
+}
+
+// 获取难度显示名称（用于生成表单）
+const getDifficultyNameForGenerate = (difficulty) => {
+  const difficultyMap = {
+    'easy': '简单',
+    'medium': '中等',
+    'hard': '困难'
+  }
+  return difficultyMap[difficulty] || difficulty
 }
 
 // 处理筛选
